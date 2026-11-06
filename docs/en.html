@@ -118,6 +118,31 @@
   <p class="count">Only tokens with verified bridge deliveries can be used as the bridge token (QOM / BABY / CAW / FATHER / HAWK / KET / O / OSAK — except OSAK from 42 Chain to QL1, where no sends could be verified). The bridge fee is 0. Sending from 42 Chain also costs a messaging fee (approx. 2.94 [42], re-fetched at send time); sending from QL1 measured 0. Arrival can take several minutes (one measured case took about 5 minutes).</p>
 </section>
 
+<section class="panel" id="arbPanel">
+  <h2>Price gaps (arbitrage)</h2>
+  <p class="count">When the same token is priced differently on QL1 and 42 Chain, you can capture the difference by buying it where it is cheap, bridging it, and selling it where it is expensive (arbitrage — trading is also what closes such gaps). This board computes routes that start and end in QOM, the common currency, for every bridgeable token in both directions using <b>real route quotes</b> (<code>getAmountsOut</code> on each leg) — spot-price comparisons would lie on these thin pools, so they are not used.</p>
+  <p id="arbTestnetNote" class="count" style="display:none">Not available on the testnet (no QL1 testnet bridge is known). Select a mainnet chain.</p>
+  <label class="fld">Amount (QOM)
+    <input id="arbAmount" type="text" inputmode="decimal" autocomplete="off" value="100000000000" aria-label="Amount (QOM)">
+  </label>
+  <div class="chips">
+    <button type="button" class="chip arb-chip" data-amt="100000000">100M QOM</button>
+    <button type="button" class="chip arb-chip" data-amt="1000000000">1B QOM</button>
+    <button type="button" class="chip arb-chip" data-amt="100000000000">100B QOM</button>
+  </div>
+  <p class="count">About sizes: a bridge send from 42 Chain carries a fixed messaging fee (approx. 2.94 [42], about 3.45B in QOM terms), so at 1B QOM or below every 42 Chain-origin route is negative from that fee alone. The default 100B QOM keeps the fee at about 3.5%. Much larger sizes drown in price impact on these thin pools instead. Small sizes can still reveal small QL1-origin gaps (that direction's messaging fee is 0).</p>
+  <button id="arbScanBtn" type="button" class="big">Scan price gaps</button>
+  <p id="arbStatus" class="status"></p>
+  <div id="arbBoard" class="route-list"></div>
+  <ul class="notes" style="margin-top:10px">
+    <li>Quotes use current pool prices. Prices can move during the bridge trip (several minutes), and the result will change with them.</li>
+    <li>Price gaps shrink and disappear as people trade them (that is how arbitrage works). A gap shown here is not guaranteed to still be there when you execute.</li>
+    <li>Round trips are riskier than one-way routes (two bridge trips, twice as long for prices to move).</li>
+    <li>Net figures deduct the bridge messaging fee converted into QOM, but not DEX gas (gas figures are estimates).</li>
+    <li>Routes whose purchasable amount is below the bridge minimum (1 token) are shown as "cannot quote" (e.g. KET at small sizes).</li>
+  </ul>
+</section>
+
 <section class="panel" id="caPanel">
   <h2>Add a token by contract address</h2>
   <p class="count">If a token is not in the list, paste its contract address (CA) and it will be read from the chain and added. Added tokens are saved in this browser.</p>
@@ -138,12 +163,13 @@
     <li>"Price impact" is the difference between a no-fee estimate from pool reserves and the real quote (fees + size impact). Gas figures are estimates too.</li>
     <li>Small pools can move between quote and execution. Try a small amount first before swapping a large one.</li>
     <li>This site takes no fee. Swaps talk directly to each chain's DEX router (42 Chain: Don't Panic / QL1: QomSwap).</li>
+    <li><b>Price-gap display (v4)</b>: cross-chain quotes now show a benchmark — the "obvious" route (via QOM, or bridging the token you pay itself when possible) — and each candidate's difference from it. When the best candidate beats the benchmark by more than 0.5%, it gets a "Price gap +x%" badge (measured example: 100 [42] on 42 Chain -&gt; QOM on QL1, the BABY bridge route paid +6.33% more than the QOM benchmark; at 500 [42] the BABY pools cannot absorb the size and it flips to −25.8% — always re-quote at your own size).</li>
     <li><b>Cross-chain (v3)</b>: bridging uses Hyperlane (Zaphod Bridge). A direction/token is enabled only where delivery was proven on-chain: message IDs were taken from real send transactions and checked against the destination chain's mailbox <code>delivered()</code> (sampled 2026-11-06: QL1 -&gt; 42 Chain 16/16 across all 8 tokens; 42 Chain -&gt; QL1 13/13 across 7 tokens, excluding OSAK, whose 42 Chain router has no sends at all in its history, so that one direction is disabled). The bridge site's own stats showing "0 QL1-origin deliveries" are an indexer gap — deliveries are confirmed on-chain. The final swap executes at arrival-time prices, so the final figure is an estimate.</li>
   </ul>
 </section>
 
 <footer>
-  <p>v3 / Data: 42 Chain RPC / QL1 RPC / 42 Testnet RPC (read directly from the pools). Source code is published under the MIT license.</p>
+  <p>v4 / Data: 42 Chain RPC / QL1 RPC / 42 Testnet RPC (read directly from the pools). Source code is published under the MIT license.</p>
 </footer>
 <script src="app.js"></script>
 </body>

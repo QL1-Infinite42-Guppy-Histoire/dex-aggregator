@@ -1,9 +1,12 @@
 "use strict";
-/* DEXアグリゲーター v2 (42 Chain / QL1 / 42 Testnet)
+/* DEXアグリゲーター v4 (42 Chain / QL1 / 42 Testnet)
    1inch風: 直接・1つ経由・2つ経由の全ルートを getAmountsOut で比較し、
    さらに上位ルートへの「分割」配分も評価して一番多いプランを提示する。
    分割の1tx実行には専用コントラクト (contracts/SplitSwap.sol) が必要。
-   デプロイ済みチェーンでのみ分割実行でき、それ以外は見積もりのみ（正直に表示）。*/
+   デプロイ済みチェーンでのみ分割実行でき、それ以外は見積もりのみ（正直に表示）。
+   v3: クロスチェーン (QL1 <=> 42 Chain) の束ね見積もり＋ガイド式実行。
+   v4: 価格差 (裁定) — クロス見積もりのベンチマーク差表示＋バッジと、
+   QOM建てで全ブリッジ可能トークン×両方向を実見積もりする価格差ボード。*/
 
 const NATIVE_PH = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 const WQOM = "0xa26dfbf98dd1a32fae56a3d2b2d60a8a41b0bdf0";
@@ -61,6 +64,7 @@ const STR = {
     xQuoted: (n, sym, amt, dstSym) => "中継候補 " + n + " 件を比べました。いちばん多いのは中継 " + sym + " で、最終見積もりは約 " + amt + " " + dstSym + " です。",
     xQuoteFail: "クロスチェーン見積もりができませんでした: ", xNoCandidate: "成立する中継候補がありませんでした（プールが無いか、流動性がありません）",
     xVia: "中継", xSwap1: "交換1", xBridge: "ブリッジ", xSwap2: "交換2", xFinalEst: "最終見積もり",
+    xDirectBridge: "直接ブリッジ（スワップなしでそのまま入る）",
     xBridgeFeeZero: "手数料 0", xNativeFeeInf: (amt) => "＋メッセージ代 約 " + amt + " [42]", xNativeFeeQl1: "＋メッセージ代 0（実測: QL1側の送信は全て支払い0でした）",
     xStartBtn: "この中継ではじめる", xTooSmall: "ブリッジの最小量（1トークン）未満のため使えません",
     xDisabledOsak: "42 Chain → QL1 の OSAK ブリッジは、公式ルーターの送信実績が確認できていないため無効です（QL1 → 42 Chain は実績あり）",
@@ -80,6 +84,28 @@ const STR = {
     xAbandoned: "進み具合を消しました。すでにブリッジで送った分は、そのまま相手チェーンの自分のアドレスに届きます。",
     xBridgeTxLabel: "ブリッジ送信: ", xWorking: "ウォレットで確認してください…", xStepFail: "失敗しました: ",
     xResumeNote: "前回のクロスチェーン交換の続きが残っています。",
+    benchLabel: (sym) => "基準（中継 " + sym + "）",
+    benchLabelDirect: (sym) => "基準（" + sym + " をそのままブリッジ）",
+    vsBench: (pct, amt, sym) => "基準より " + (pct >= 0 ? "+" : "") + pct + "%（" + (pct >= 0 ? "+" : "−") + amt + " " + sym + "）",
+    gapBadge: (pct) => "価格差で +" + pct + "%",
+    arbScanning: "価格差を調べています…（全トークン×両方向で、実際のルート見積もりを全部叩きます。少し時間がかかります）",
+    arbDone: (pos, total) => "調べました。プラスの価格差は " + pos + " / " + total + " 件です（マイナスは「今はマイナス（裁定なし）」と表示しています）。",
+    arbFail: "価格差を調べられませんでした: ",
+    arbSingleTitle: "片道裁定（QOM で始めて、もう一方のチェーンの QOM で終わる）",
+    arbRoundTitle: "往復裁定（片道のあと、QOM を元のチェーンへ戻す）",
+    arbRouteBridge: "ブリッジ",
+    arbStartLabel: "開始", arbEndLabel: "終了見積もり", arbNetLabel: "差し引き",
+    arbFeeInQom: (amt) => "ブリッジのメッセージ代（QOM換算）約 " + amt + " QOM を差し引き済み",
+    arbFeeZero: "ブリッジのメッセージ代は0（QL1発）",
+    arbNegative: "今はマイナス（裁定なし）",
+    arbUnavailable: "見積もり不可: ",
+    arbStartBtn: "このルートではじめる", arbStartRtBtn: "往復の片道目ではじめる",
+    arbBenchmarkRow: "基準（QOM をそのままブリッジ）",
+    arbRtNote: "往復の戻りは、片道が終わったあとにこの画面の案内から開始できます（自動では送りません）。",
+    arbReturnBtn: "往復の戻りをはじめる（QOM を戻す）",
+    arbReturnNote: "往復裁定の戻りです。届いた QOM を元のチェーンへブリッジする案内を開始します。",
+    arbNeedAmount: "金額（QOM）を入れてください",
+    arbDirLabel: (a, b) => a + " → " + b,
   },
   en: {
     errAmountFormat: "Invalid amount format", errTooManyDecimals: (d) => "Too many decimal places (max " + d + ")",
@@ -132,6 +158,7 @@ const STR = {
     xQuoted: (n, sym, amt, dstSym) => "Compared " + n + " bridge candidates. The best is via " + sym + ", final estimate approx. " + amt + " " + dstSym + ".",
     xQuoteFail: "Cross-chain quote failed: ", xNoCandidate: "No bridge candidate works (no pool or no liquidity)",
     xVia: "Via", xSwap1: "Swap 1", xBridge: "Bridge", xSwap2: "Swap 2", xFinalEst: "Final estimate",
+    xDirectBridge: "Direct bridge (no swap — enters as-is)",
     xBridgeFeeZero: "fee 0", xNativeFeeInf: (amt) => "+ messaging cost approx. " + amt + " [42]", xNativeFeeQl1: "+ messaging cost 0 (measured: every sampled QL1 send paid 0)",
     xStartBtn: "Start with this bridge token", xTooSmall: "Below the bridge minimum (1 token)",
     xDisabledOsak: "The 42 Chain -> QL1 OSAK bridge is disabled: no sends through the official router could be verified (QL1 -> 42 Chain is verified)",
@@ -151,6 +178,28 @@ const STR = {
     xAbandoned: "Progress cleared. Anything already sent over the bridge will still arrive at your own address on the other chain.",
     xBridgeTxLabel: "Bridge send: ", xWorking: "Confirm in your wallet...", xStepFail: "Failed: ",
     xResumeNote: "You have an unfinished cross-chain swap saved.",
+    benchLabel: (sym) => "Benchmark (via " + sym + ")",
+    benchLabelDirect: (sym) => "Benchmark (bridge " + sym + " itself)",
+    vsBench: (pct, amt, sym) => (pct >= 0 ? "+" : "") + pct + "% vs benchmark (" + (pct >= 0 ? "+" : "−") + amt + " " + sym + ")",
+    gapBadge: (pct) => "Price gap +" + pct + "%",
+    arbScanning: "Scanning price gaps... (runs real route quotes for every token in both directions; this takes a little while)",
+    arbDone: (pos, total) => "Done. Positive gaps: " + pos + " of " + total + " routes (negative ones are labelled \"no arbitrage right now\").",
+    arbFail: "Could not scan price gaps: ",
+    arbSingleTitle: "One-way arbitrage (start in QOM, end in QOM on the other chain)",
+    arbRoundTitle: "Round-trip arbitrage (then bridge the QOM back)",
+    arbRouteBridge: "bridge",
+    arbStartLabel: "Start", arbEndLabel: "Est. end", arbNetLabel: "Net",
+    arbFeeInQom: (amt) => "Bridge messaging fee already deducted (approx. " + amt + " in QOM terms)",
+    arbFeeZero: "Bridge messaging fee is 0 (QL1 origin)",
+    arbNegative: "Negative right now (no arbitrage)",
+    arbUnavailable: "Cannot quote: ",
+    arbStartBtn: "Start with this route", arbStartRtBtn: "Start the first (one-way) leg",
+    arbBenchmarkRow: "Benchmark (bridge QOM itself)",
+    arbRtNote: "The return leg can be started from this screen's guide after the one-way leg finishes (it is never sent automatically).",
+    arbReturnBtn: "Start the return leg (bridge the QOM back)",
+    arbReturnNote: "This is the return leg of a round-trip arbitrage. Starting the guide to bridge the arrived QOM back to the original chain.",
+    arbNeedAmount: "Enter an amount (in QOM)",
+    arbDirLabel: (a, b) => a + " -> " + b,
   },
 };
 function t(key, ...args) { const v = STR[LANG][key]; return typeof v === "function" ? v(...args) : v; }
@@ -307,6 +356,9 @@ const state = {
   xQuote: null,          // v3: {fromId, toId, amountIn} of last cross quote
   xflow: null,           // v3: guided flow state (persisted)
   xPollTimer: null,
+  xBenchmark: null,      // v4: {sym, kind, finalOut} benchmark of the last cross quote
+  arbRows: [],           // v4: last arbitrage board scan rows
+  arbStartRaw: null,     // v4: start amount (QOM raw) of the last board scan
 };
 function chain() { return CHAINS[state.chainKey]; }
 function splitExecutable(chainObj) { return !!(chainObj && chainObj.aggregator && chainObj.aggregator.length === 42); }
@@ -705,7 +757,104 @@ async function quoteCrossPlan(srcKey, fromTok, dstKey, toTok, amountIn) {
   }
   const en = out.filter((c) => c.enabled);
   en.sort((a, b) => (b.finalOut > a.finalOut ? 1 : b.finalOut < a.finalOut ? -1 : 0));
-  return [...en, ...out.filter((c) => !c.enabled)];
+  const result = [...en, ...out.filter((c) => !c.enabled)];
+  /* v4 benchmark: the "obvious" route — via QOM, or bridging the source token
+     itself when that is possible. The better of the available ones is the
+     benchmark; every candidate gets its difference vs the benchmark so the
+     price-gap (arbitrage) saving is visible on the card itself. */
+  let benchmark = null;
+  const consider = (cand, kind) => {
+    if (!cand || !cand.enabled || cand.finalOut == null) return;
+    if (!benchmark || cand.finalOut > benchmark.finalOut) benchmark = { sym: cand.pair.sym, kind, finalOut: cand.finalOut };
+  };
+  consider(en.find((c) => c.pair.sym === "QOM"), "qom");
+  consider(en.find((c) => c.tSrc.address.toLowerCase() === fromTok.address.toLowerCase()), "direct");
+  if (benchmark) {
+    for (const c of result) {
+      if (!c.enabled || c.finalOut == null) continue;
+      c.vsBenchDiff = c.finalOut - benchmark.finalOut;
+      c.vsBenchPct = benchmark.finalOut > 0n ? (Number(c.vsBenchDiff) / Number(benchmark.finalOut)) * 100 : 0;
+    }
+  }
+  result.benchmark = benchmark;
+  return result;
+}
+
+/* ---------- v4 arbitrage: price-gap routes between QL1 and Infinite ----------
+   Numeraire is QOM (exists on both chains, bridges 1:1 at fee 0).
+   Every number comes from running the real route quotes (fetchBestRoute =
+   getAmountsOut on each leg) at the requested size — spot prices of these
+   thin pools would lie. Bridge messaging fees are converted into QOM terms
+   and deducted: Infinite-origin sends pay quoteNative in [42] (converted via
+   the live 42->QOM route); QL1-origin sends measured 0. DEX gas is NOT
+   included (the UI says so). */
+function qomTokenId(chainKey) { return chainKey === "infinite" ? "qom" : "wqom"; }
+async function fetchBridgeFeeInQom(pair, cache) {
+  if (cache && cache.has(pair.sym)) return cache.get(pair.sym);
+  let fee = 0n;
+  try {
+    const q = await fetchBridgeNativeQuote(pair);
+    if (q && q.totalNative > 0n) {
+      const conv = await fetchBestRoute(CHAINS.infinite, tokenById("infinite", "native"), tokenById("infinite", "qom"), q.totalNative);
+      if (conv) fee = conv.amountOut;
+    }
+  } catch (e) { fee = 0n; }
+  if (cache) cache.set(pair.sym, fee);
+  return fee;
+}
+async function quoteArbRoute(dirKey, pair, startRaw, feeCache) {
+  const srcKey = dirKey === "infToQl1" ? "infinite" : "ql1";
+  const dstKey = srcKey === "infinite" ? "ql1" : "infinite";
+  const src = CHAINS[srcKey], dst = CHAINS[dstKey];
+  const row = { sym: pair.sym, dirKey, srcKey, dstKey, startRaw, ok: false, reason: null, isBenchmark: pair.sym === "QOM" };
+  const enabled = srcKey === "ql1" ? pair.enabledFromQl1 : pair.enabledFromInf;
+  if (!enabled) { row.reason = t("xDisabledOsak"); return row; }
+  const qomSrc = tokenById(srcKey, qomTokenId(srcKey));
+  const qomDst = tokenById(dstKey, qomTokenId(dstKey));
+  const tSrc = tokenById(srcKey, srcKey === "infinite" ? pair.infId : pair.ql1Id);
+  const tDst = tokenById(dstKey, dstKey === "infinite" ? pair.infId : pair.ql1Id);
+  if (!qomSrc || !qomDst || !tSrc || !tDst) { row.reason = t("errNoRoute"); return row; }
+  let mid = startRaw, swap1Route = null;
+  if (pair.sym !== "QOM") {
+    const best = await fetchBestRoute(src, qomSrc, tSrc, startRaw);
+    if (!best) { row.reason = t("errNoRoute"); return row; }
+    mid = best.amountOut; swap1Route = best;
+  }
+  if (mid < (10n ** BigInt(tSrc.decimals))) { row.reason = t("xTooSmall"); return row; }
+  let endRaw = mid, swap2Route = null;
+  if (pair.sym !== "QOM") {
+    const best2 = await fetchBestRoute(dst, tDst, qomDst, mid);
+    if (!best2) { row.reason = t("errNoRoute"); return row; }
+    endRaw = best2.amountOut; swap2Route = best2;
+  }
+  let feeQom = 0n;
+  if (srcKey === "infinite") feeQom = await fetchBridgeFeeInQom(pair, feeCache);
+  let feeQomRt = feeQom;
+  if (dstKey === "infinite") feeQomRt = feeQom + (await fetchBridgeFeeInQom(bridgePairBySym("QOM"), feeCache));
+  row.ok = true;
+  row.midRaw = mid; row.endRaw = endRaw;
+  row.swap1Route = swap1Route; row.swap2Route = swap2Route;
+  row.feeQom = feeQom; row.feeQomRt = feeQomRt;
+  row.netSingle = endRaw - feeQom;
+  row.gainSinglePct = startRaw > 0n ? (Number(row.netSingle - startRaw) / Number(startRaw)) * 100 : 0;
+  row.netRt = endRaw - feeQomRt;
+  row.gainRtPct = startRaw > 0n ? (Number(row.netRt - startRaw) / Number(startRaw)) * 100 : 0;
+  return row;
+}
+async function quoteArbBoard(startRaw) {
+  const feeCache = new Map();
+  const jobs = [];
+  for (const dirKey of ["infToQl1", "ql1ToInf"]) for (const pair of BRIDGE_PAIRS) jobs.push({ dirKey, pair });
+  const rows = [];
+  const CHUNK = 4;
+  for (let i = 0; i < jobs.length; i += CHUNK) {
+    const part = await Promise.all(jobs.slice(i, i + CHUNK).map((j) => quoteArbRoute(j.dirKey, j.pair, startRaw, feeCache).catch((e) => ({
+      sym: j.pair.sym, dirKey: j.dirKey, srcKey: j.dirKey === "infToQl1" ? "infinite" : "ql1", dstKey: j.dirKey === "infToQl1" ? "ql1" : "infinite",
+      startRaw, ok: false, reason: (e && e.message) || "error", isBenchmark: j.pair.sym === "QOM",
+    }))));
+    rows.push(...part);
+  }
+  return rows;
 }
 
 /* ---------- v3 cross-chain: guided flow state (localStorage persistence) ---------- */
@@ -1070,7 +1219,7 @@ function setXSrc(srcKey) {
   if ($("xSrcQl1")) $("xSrcQl1").classList.toggle("active", srcKey === "ql1");
   if ($("xDstLabel")) $("xDstLabel").textContent = CHAINS[xDstKey()].label;
   fillXSelects();
-  state.xCandidates = []; state.xQuote = null;
+  state.xCandidates = []; state.xQuote = null; state.xBenchmark = null;
   if ($("xCandidates")) $("xCandidates").innerHTML = "";
   setChain(srcKey);
   refreshXBalance();
@@ -1114,6 +1263,7 @@ async function onXQuote() {
   try {
     const cands = await quoteCrossPlan(state.xSrc, f, xDstKey(), tk, amountIn);
     state.xCandidates = cands;
+    state.xBenchmark = cands.benchmark || null;
     state.xQuote = { fromId: f.id, toId: tk.id, amountIn: amountIn.toString() };
     renderXCandidates();
     const best = cands.find((c) => c.enabled);
@@ -1132,21 +1282,33 @@ function renderXCandidates() {
     if (!c.enabled) {
       return '<div class="route-card" style="opacity:.55"><span class="r-head"><span class="r-rank">' + esc(t("xVia")) + " " + esc(c.pair.sym) + '</span></span><span class="r-line">' + esc(c.reason || "") + "</span></div>";
     }
-    const s1 = c.swap1Route ? pathLabel(state.xSrc, c.swap1Route.path) + " → " + formatAmount(c.swap1Out, c.tSrc.decimals, 6) + " " + c.tSrc.symbol + (c.swap1Route.priceImpactPct != null ? " (" + t("routeImpact", c.swap1Route.priceImpactPct.toFixed(2)) + ")" : "") : formatAmount(c.swap1Out, c.tSrc.decimals, 6) + " " + c.tSrc.symbol;
+    const s1 = c.swap1Route ? pathLabel(state.xSrc, c.swap1Route.path) + " → " + formatAmount(c.swap1Out, c.tSrc.decimals, 6) + " " + c.tSrc.symbol + (c.swap1Route.priceImpactPct != null ? " (" + t("routeImpact", c.swap1Route.priceImpactPct.toFixed(2)) + ")" : "") : t("xDirectBridge") + ": " + formatAmount(c.swap1Out, c.tSrc.decimals, 6) + " " + c.tSrc.symbol;
     const fee = state.xSrc === "infinite" ? t("xBridgeFeeZero") + " / " + t("xNativeFeeInf", formatAmount(c.nativeFee, 18, 4)) : t("xBridgeFeeZero") + " / " + t("xNativeFeeQl1");
     const s2 = c.swap2Route ? pathLabel(xDstKey(), c.swap2Route.path) + " → " + formatAmount(c.finalOut, toTok.decimals, 6) + " " + toTok.symbol + (c.swap2Route.priceImpactPct != null ? " (" + t("routeImpact", c.swap2Route.priceImpactPct.toFixed(2)) + ")" : "") : formatAmount(c.finalOut, toTok.decimals, 6) + " " + toTok.symbol;
+    const bench = state.xBenchmark;
+    let benchHtml = "";
+    if (bench) {
+      if (c.finalOut === bench.finalOut && c.pair.sym === bench.sym) {
+        benchHtml = '<span class="r-line">' + esc(bench.kind === "direct" ? t("benchLabelDirect", bench.sym) : t("benchLabel", bench.sym)) + "</span>";
+      } else if (c.vsBenchPct != null) {
+        const diffAbs = c.vsBenchDiff < 0n ? -c.vsBenchDiff : c.vsBenchDiff;
+        benchHtml = '<span class="r-line">' + esc(t("vsBench", c.vsBenchPct.toFixed(2), formatAmount(diffAbs, toTok.decimals, 6), toTok.symbol)) + "</span>";
+      }
+    }
+    const gapBadge = i === 0 && c.vsBenchPct != null && c.vsBenchPct > 0.5 ? '<span class="badge gap">' + esc(t("gapBadge", c.vsBenchPct.toFixed(2))) + "</span>" : "";
     return '<div class="route-card">' +
-      '<span class="r-head"><span class="r-rank">' + esc(t("xVia")) + " " + esc(c.pair.sym) + "</span>" + (i === 0 ? '<span class="badge best">' + esc(t("routeBest")) + "</span>" : "") +
+      '<span class="r-head"><span class="r-rank">' + esc(t("xVia")) + " " + esc(c.pair.sym) + "</span>" + (i === 0 ? '<span class="badge best">' + esc(t("routeBest")) + "</span>" : "") + gapBadge +
       '<span class="r-out">' + formatAmount(c.finalOut, toTok.decimals, 6) + " " + esc(toTok.symbol) + "</span></span>" +
       '<span class="r-line">' + esc(t("xSwap1")) + ": " + esc(s1) + "</span>" +
       '<span class="r-line">' + esc(t("xBridge")) + " (" + esc(CHAINS[state.xSrc].label) + " → " + esc(dst.label) + "): " + esc(fee) + "</span>" +
       '<span class="r-line">' + esc(t("xSwap2")) + ": " + esc(s2) + "</span>" +
       '<span class="r-line">' + esc(t("xFinalEst")) + ": " + formatAmount(c.finalOut, toTok.decimals, 6) + " " + esc(toTok.symbol) + "</span>" +
+      benchHtml +
       '<button type="button" class="x-start" data-sym="' + esc(c.pair.sym) + '">' + esc(t("xStartBtn")) + "</button></div>";
   }).join("") + '<p class="count">' + esc(t("xEstNote")) + "</p>";
   list.querySelectorAll(".x-start").forEach((el) => el.addEventListener("click", () => startXFlow(el.dataset.sym)));
 }
-async function startXFlow(sym) {
+async function startXFlow(sym, opts) {
   if (!state.account) { setXStatus(t("xNeedConnect"), true); return; }
   const cand = state.xCandidates.find((c) => c.enabled && c.pair.sym === sym);
   if (!cand || !state.xQuote) return;
@@ -1162,6 +1324,7 @@ async function startXFlow(sym) {
     swap1Path: cand.swap1Route ? cand.swap1Route.path : null, swap1Out: cand.swap1Out.toString(),
     bridgeOut: cand.bridgeOut.toString(), finalEst: cand.finalOut.toString(), nativeFee: cand.nativeFee.toString(),
     baselineT: baselineT.toString(), baselineDst: null, swap1Tx: null, bridgeTx: null, messageId: null, bridgeAt: null, arrived: null,
+    arbReturn: !!(opts && opts.arbReturn),
     createdAt: Date.now(),
   };
   saveXFlow();
@@ -1208,13 +1371,18 @@ function renderXFlow() {
   // step 4
   html += '<div class="xstep' + (f.step === 4 ? " current" : "") + '"><div class="xstep-head"><b>' + esc(t("xStep4Title")) + '</b><span class="badge-step">' + esc(st(4)) + '</span></div>' +
     '<p class="count">' + esc(t("xStep4Desc", tSrc.symbol, toTok.symbol)) + "</p>" +
+    (f.arbReturn ? '<p class="count">' + esc(t("arbRtNote")) + "</p>" : "") +
     (f.step === 4 ? '<button type="button" id="xStep4Btn">' + esc(t("xStep4Btn")) + "</button>" : "") + "</div>";
-  if (f.step === "done") html += '<p class="count">' + esc(t("xFlowDone")) + "</p>";
+  if (f.step === "done") {
+    html += '<p class="count">' + esc(t("xFlowDone")) + "</p>";
+    if (f.arbReturn) html += '<button type="button" id="xReturnBtn">' + esc(t("arbReturnBtn")) + "</button>";
+  }
   html += "</div>";
   area.innerHTML = html;
   const b1 = $("xStep1Btn"); if (b1) b1.addEventListener("click", doXStep1);
   const b2 = $("xStep2Btn"); if (b2) b2.addEventListener("click", doXStep2);
   const b4 = $("xStep4Btn"); if (b4) b4.addEventListener("click", doXStep4);
+  const brt = $("xReturnBtn"); if (brt) brt.addEventListener("click", startReturnFlow);
   const bc = $("xCheckBtn"); if (bc) bc.addEventListener("click", () => checkArrival(true));
   if (f.step === 3) {
     const upd = () => { const el = $("xElapsed"); if (el && f.bridgeAt) el.textContent = t("xStep3Elapsed", Math.max(0, Math.floor((Date.now() - f.bridgeAt) / 1000))); };
@@ -1313,6 +1481,105 @@ function onXAbandon() {
   setXStatus(t("xAbandoned"));
 }
 
+/* ================= v4 arbitrage board UI ================= */
+function setArbStatus(msg, isErr) { const el = $("arbStatus"); if (el) { el.textContent = msg || ""; el.style.color = isErr ? "#ff9d9d" : ""; } }
+function arbCardHtml(row, kind) {
+  const isRt = kind === "rt";
+  const net = isRt ? row.netRt : row.netSingle;
+  const pct = isRt ? row.gainRtPct : row.gainSinglePct;
+  const fee = isRt ? row.feeQomRt : row.feeQom;
+  const dir = t("arbDirLabel", CHAINS[row.srcKey].label, CHAINS[row.dstKey].label);
+  if (!row.ok) {
+    return '<div class="route-card arb-card" style="opacity:.55"><span class="r-head"><span class="r-rank">' + esc(row.sym) + " ／ " + esc(dir) + '</span></span>' +
+      '<span class="r-line">' + esc(t("arbUnavailable")) + esc(row.reason || "") + "</span></div>";
+  }
+  const routeLine = row.sym === "QOM"
+    ? "QOM →（" + t("arbRouteBridge") + "）→ QOM"
+    : "QOM → " + row.sym + "（" + CHAINS[row.srcKey].label + "）→（" + t("arbRouteBridge") + "）→ " + row.sym + " → QOM（" + CHAINS[row.dstKey].label + "）";
+  const s1 = row.swap1Route ? pathLabel(row.srcKey, row.swap1Route.path) : null;
+  const s2 = row.swap2Route ? pathLabel(row.dstKey, row.swap2Route.path) : null;
+  const pctTxt = (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%";
+  return '<div class="route-card arb-card">' +
+    '<span class="r-head"><span class="r-rank">' + esc(row.sym) + " ／ " + esc(dir) + "</span>" +
+    (row.isBenchmark ? '<span class="badge bench">' + esc(t("arbBenchmarkRow")) + "</span>" : "") +
+    '<span class="r-out arb-net ' + (pct >= 0 ? "pos" : "neg") + '">' + pctTxt + "</span></span>" +
+    '<span class="r-line">' + esc(routeLine) + "</span>" +
+    (s1 ? '<span class="r-line">' + esc(t("xSwap1")) + ": " + esc(s1) + "</span>" : "") +
+    (s2 ? '<span class="r-line">' + esc(t("xSwap2")) + ": " + esc(s2) + "</span>" : "") +
+    '<span class="r-line">' + esc(t("arbStartLabel")) + ": " + formatAmount(row.startRaw, 18, 6) + " QOM → " + esc(t("arbEndLabel")) + ": " + formatAmount(net, 18, 6) + " QOM（" + esc(t("arbNetLabel")) + " " + pctTxt + "）</span>" +
+    '<span class="r-line">' + esc(fee > 0n ? t("arbFeeInQom", formatAmount(fee, 18, 4)) : t("arbFeeZero")) + "</span>" +
+    (pct <= 0 ? '<span class="r-line arb-neg-label">' + esc(t("arbNegative")) + "</span>" : "") +
+    (isRt ? '<span class="r-line">' + esc(t("arbRtNote")) + "</span>" : "") +
+    '<button type="button" class="x-start arb-start" data-sym="' + esc(row.sym) + '" data-dir="' + esc(row.dirKey) + '" data-kind="' + kind + '">' + esc(isRt ? t("arbStartRtBtn") : t("arbStartBtn")) + "</button></div>";
+}
+function renderArbBoard() {
+  const list = $("arbBoard"); if (!list) return;
+  const rows = state.arbRows;
+  if (!rows || !rows.length || state.arbStartRaw == null) { list.innerHTML = ""; return; }
+  const byGain = (key) => (a, b) => {
+    if (a.ok && !b.ok) return -1; if (!a.ok && b.ok) return 1;
+    if (a.ok && b.ok) return b[key] - a[key];
+    return 0;
+  };
+  const singles = rows.slice().sort(byGain("gainSinglePct"));
+  const rts = rows.slice().sort(byGain("gainRtPct"));
+  list.innerHTML =
+    '<p class="arb-group">' + esc(t("arbSingleTitle")) + "</p>" + singles.map((r) => arbCardHtml(r, "single")).join("") +
+    '<p class="arb-group">' + esc(t("arbRoundTitle")) + "</p>" + rts.map((r) => arbCardHtml(r, "rt")).join("");
+  list.querySelectorAll(".arb-start").forEach((el) => el.addEventListener("click", () => {
+    const row = state.arbRows.find((r) => r.sym === el.dataset.sym && r.dirKey === el.dataset.dir);
+    if (row) startArbFlow(row, el.dataset.kind);
+  }));
+}
+async function onArbScan() {
+  if (state.chainKey === "testnet") { setArbStatus(LANG === "en" ? "The price-gap board is mainnet-only (no QL1 testnet bridge is known)." : "価格差ボードは本番チェーン同士だけです（QL1のテストネットブリッジは確認できていません）。", true); return; }
+  let startRaw;
+  try {
+    startRaw = parseAmount($("arbAmount").value, 18);
+    if (startRaw <= 0n) throw new Error(t("arbNeedAmount"));
+  } catch (e) { setArbStatus(e.message, true); return; }
+  const btn = $("arbScanBtn"); if (btn) btn.disabled = true;
+  setArbStatus(t("arbScanning"));
+  if ($("arbBoard")) $("arbBoard").innerHTML = "";
+  try {
+    const rows = await quoteArbBoard(startRaw);
+    state.arbRows = rows; state.arbStartRaw = startRaw;
+    renderArbBoard();
+    const pos = rows.filter((r) => r.ok && r.gainSinglePct > 0).length;
+    setArbStatus(t("arbDone", pos, rows.length));
+  } catch (e) { setArbStatus(t("arbFail") + e.message, true); }
+  finally { if (btn) btn.disabled = false; }
+}
+async function startArbFlow(row, kind) {
+  if (!row || !row.ok) return;
+  const isRt = kind === "rt";
+  if (state.chainKey === "testnet") setChain("infinite");
+  setMode("cross");
+  setXSrc(row.srcKey);
+  if ($("xFromToken")) $("xFromToken").value = qomTokenId(row.srcKey);
+  if ($("xToToken")) $("xToToken").value = qomTokenId(row.dstKey);
+  if ($("xAmount")) $("xAmount").value = formatAmount(row.startRaw, 18, 18).replace(/,/g, "");
+  await onXQuote();
+  const cand = state.xCandidates.find((c) => c.enabled && c.pair.sym === row.sym);
+  if (!cand) { setXStatus(t("xNoCandidate"), true); return; }
+  if (!state.account) { setXStatus(t("xNeedConnect"), true); return; }
+  await startXFlow(row.sym, { arbReturn: isRt });
+  if (isRt) setXStatus(t("arbRtNote"));
+}
+async function startReturnFlow() {
+  const f = state.xflow; if (!f || !f.arbReturn) return;
+  const srcKey = f.dstKey, dstKey = f.srcKey;
+  setMode("cross");
+  setXSrc(srcKey);
+  if ($("xFromToken")) $("xFromToken").value = qomTokenId(srcKey);
+  if ($("xToToken")) $("xToToken").value = qomTokenId(dstKey);
+  if ($("xAmount")) $("xAmount").value = formatAmount(BigInt(f.finalEst || f.bridgeOut), 18, 18).replace(/,/g, "");
+  await onXQuote();
+  setXStatus(t("arbReturnNote"));
+  if (!state.account) { setXStatus(t("xNeedConnect"), true); return; }
+  await startXFlow("QOM");
+}
+
 /* ---------- CA add ---------- */
 async function onCaAdd() {
   const input = $("caInput"), msg = $("caMsg");
@@ -1345,6 +1612,8 @@ function setChain(key) {
   $("chainQl1").classList.toggle("active", key === "ql1");
   if ($("chainTest")) $("chainTest").classList.toggle("active", key === "testnet");
   if ($("testnetBanner")) $("testnetBanner").style.display = key === "testnet" ? "" : "none";
+  if ($("arbTestnetNote")) $("arbTestnetNote").style.display = key === "testnet" ? "" : "none";
+  if ($("arbScanBtn")) $("arbScanBtn").disabled = key === "testnet";
   $("chainNote").textContent = key === "infinite" ? t("noteInfinite") : key === "ql1" ? t("noteQl1") : t("noteTestnet");
   fillTokenSelects();
   clearRoutes(t("statusChainSwitched"));
@@ -1399,6 +1668,8 @@ function initApp() {
   if ($("xSrcInf")) $("xSrcInf").addEventListener("click", () => setXSrc("infinite"));
   if ($("xSrcQl1")) $("xSrcQl1").addEventListener("click", () => setXSrc("ql1"));
   if ($("xQuoteBtn")) $("xQuoteBtn").addEventListener("click", onXQuote);
+  if ($("arbScanBtn")) $("arbScanBtn").addEventListener("click", onArbScan);
+  document.querySelectorAll(".arb-chip").forEach((el) => el.addEventListener("click", () => { if ($("arbAmount")) $("arbAmount").value = el.dataset.amt; }));
   if ($("xAbandon")) $("xAbandon").addEventListener("click", onXAbandon);
   for (const id of ["xFromToken", "xToToken"]) if ($(id)) $(id).addEventListener("change", () => { state.xCandidates = []; state.xQuote = null; if ($("xCandidates")) $("xCandidates").innerHTML = ""; refreshXBalance(); });
   loadXFlow();
@@ -1410,5 +1681,6 @@ if (typeof document !== "undefined" && document.getElementById && document.getEl
 }
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { CHAINS, STR, LANG, state, parseAmount, formatAmount, formatRate, formatGas, encAddr, encUint, encLegsTail, encodeGetAmountsOut, decodeAmountsOut, buildCandidatePaths, fetchQuotesForTokens, evaluateSplits, buildSwapTx, buildApproveTx, buildSplitTx, applySlippageBps, fetchTokenMeta, tokenById, allTokens, symbolFor, onQuote, onCaAdd, selectRoute, selectSplit, selectedRoute, setChain, estimateGasUnitsSingle, estimateGasUnitsSplit, splitExecutable,
-    BRIDGE_PAIRS, BRIDGE_MAILBOX, bridgePairBySym, fetchBestRoute, buildBridgeTx, decodeBridgeTxData, encodeRecipient32, fetchBridgeNativeQuote, fetchBridgeDelivered, readTokenBalance, extractMessageId, quoteCrossPlan, serializeXFlow, restoreXFlow, saveXFlow, loadXFlow, setMode, setXSrc, xDstKey, onXQuote, renderXCandidates, startXFlow, renderXFlow, checkArrival, doXStep4, onXAbandon };
+    BRIDGE_PAIRS, BRIDGE_MAILBOX, bridgePairBySym, fetchBestRoute, buildBridgeTx, decodeBridgeTxData, encodeRecipient32, fetchBridgeNativeQuote, fetchBridgeDelivered, readTokenBalance, extractMessageId, quoteCrossPlan, serializeXFlow, restoreXFlow, saveXFlow, loadXFlow, setMode, setXSrc, xDstKey, onXQuote, renderXCandidates, startXFlow, renderXFlow, checkArrival, doXStep4, onXAbandon,
+    qomTokenId, fetchBridgeFeeInQom, quoteArbRoute, quoteArbBoard, renderArbBoard, onArbScan, startArbFlow, startReturnFlow };
 }

@@ -4,7 +4,7 @@
 const fs = require("fs");
 const vm = require("vm");
 
-const IDS = ["chainInf", "chainQl1", "chainTest", "testnetBanner", "chainNote", "connectBtn", "accountLine", "status", "fromToken", "toToken", "fromBalance", "toBalance", "amountIn", "flipBtn", "quoteBtn", "planArea", "routeList", "splitNote", "rateLine", "rateInvertBtn", "gasLine", "receiveOut", "minLine", "swapBtn", "txResult", "slipCustom", "caInput", "caAddBtn", "caMsg", "modeSame", "modeCross", "modeNote", "swapPanel", "caPanel", "crossPanel", "xSrcInf", "xSrcQl1", "xDstLabel", "xFromToken", "xToToken", "xFromBalance", "xAmount", "xQuoteBtn", "xStatus", "xCandidates", "xFlow", "xAbandon"];
+const IDS = ["chainInf", "chainQl1", "chainTest", "testnetBanner", "chainNote", "connectBtn", "accountLine", "status", "fromToken", "toToken", "fromBalance", "toBalance", "amountIn", "flipBtn", "quoteBtn", "planArea", "routeList", "splitNote", "rateLine", "rateInvertBtn", "gasLine", "receiveOut", "minLine", "swapBtn", "txResult", "slipCustom", "caInput", "caAddBtn", "caMsg", "modeSame", "modeCross", "modeNote", "swapPanel", "caPanel", "crossPanel", "xSrcInf", "xSrcQl1", "xDstLabel", "xFromToken", "xToToken", "xFromBalance", "xAmount", "xQuoteBtn", "xStatus", "xCandidates", "xFlow", "xAbandon", "arbPanel", "arbAmount", "arbScanBtn", "arbStatus", "arbBoard", "arbTestnetNote"];
 
 function loadPage(lang, seedStore) {
   function makeEl(id) {
@@ -133,6 +133,58 @@ function loadPage(lang, seedStore) {
   await en2.app.onXQuote();
   const xcE = en2.app.state.xCandidates;
   console.log("[V3-EN] INF->QL1: OSAK disabled:", !xcE.find((c) => c.pair.sym === "OSAK").enabled, "| reason len>0:", (xcE.find((c) => c.pair.sym === "OSAK").reason || "").length > 0, "| best via:", xcE.find((c) => c.enabled).pair.sym);
+
+  /* ================= v4 arbitrage (JP) ================= */
+  console.log("\n[V4-JP] --- arbitrage: benchmark badge in cross quotes ---");
+  const jp3 = loadPage("ja");
+  jp3.app.setMode("cross");
+  jp3.app.setXSrc("infinite");
+  jp3.els.xFromToken.value = "native"; jp3.els.xToToken.value = "native"; jp3.els.xAmount.value = "100";
+  await jp3.app.onXQuote();
+  const bm = jp3.app.state.xBenchmark;
+  const babyC = jp3.app.state.xCandidates.find((x) => x.pair.sym === "BABY");
+  console.log("[V4-JP] benchmark:", bm && bm.sym, "(" + (bm && bm.kind) + ")", "| BABY vsBench%:", babyC && babyC.vsBenchPct != null ? babyC.vsBenchPct.toFixed(2) : null);
+  console.log("[V4-JP] candidates html: gap badge:", jp3.els.xCandidates.innerHTML.includes("価格差で"), "| benchmark line:", jp3.els.xCandidates.innerHTML.includes("基準"));
+  // direct bridge: holding CAW on Infinite, entering QL1 as CAW itself (no swap 1)
+  jp3.els.xFromToken.value = "caw"; jp3.els.xToToken.value = "native"; jp3.els.xAmount.value = "10000";
+  await jp3.app.onXQuote();
+  const cawCand = jp3.app.state.xCandidates.find((x) => x.pair.sym === "CAW");
+  console.log("[V4-JP] direct-bridge candidate: CAW swap1Route is null:", !!(cawCand && cawCand.enabled && !cawCand.swap1Route), "| html labels it:", jp3.els.xCandidates.innerHTML.includes("直接ブリッジ"), "| benchmark kind:", jp3.app.state.xBenchmark && jp3.app.state.xBenchmark.kind);
+
+  console.log("[V4-JP] --- arbitrage board ---");
+  jp3.els.arbAmount.value = "100000000";
+  await jp3.app.onArbScan();
+  const arows = jp3.app.state.arbRows;
+  console.log("[V4-JP] board rows:", arows.length, "| ok:", arows.filter((r) => r.ok).length, "| status:", jp3.els.arbStatus.textContent.slice(0, 70));
+  console.log("[V4-JP] board html: single group:", jp3.els.arbBoard.innerHTML.includes("片道裁定"), "| RT group:", jp3.els.arbBoard.innerHTML.includes("往復裁定"), "| cards:", (jp3.els.arbBoard.innerHTML.match(/arb-card/g) || []).length, "| has start buttons:", jp3.els.arbBoard.innerHTML.includes("arb-start"));
+  // sorting: extract net % of single-group cards in HTML order (they appear before the RT group heading)
+  const singlePart = jp3.els.arbBoard.innerHTML.split("往復裁定")[0];
+  const pcts = [...singlePart.matchAll(/arb-net (?:pos|neg)">([+-]?[0-9.]+)%/g)].map((m) => parseFloat(m[1]));
+  console.log("[V4-JP] single-group net% in HTML order:", pcts.join(", "), "| sorted desc:", pcts.every((v, i) => i === 0 || pcts[i - 1] >= v));
+  const osakRow = arows.find((r) => r.sym === "OSAK" && r.dirKey === "ql1ToInf");
+  console.log("[V4-JP] OSAK ql1ToInf row ok:", osakRow && osakRow.ok, "| gain:", osakRow && osakRow.ok ? osakRow.gainSinglePct.toFixed(2) + "%" : osakRow && osakRow.reason);
+  const osakInf = arows.find((r) => r.sym === "OSAK" && r.dirKey === "infToQl1");
+  console.log("[V4-JP] OSAK infToQl1 unavailable (direction disabled):", osakInf && !osakInf.ok);
+
+  console.log("[V4-JP] --- board click -> prefill cross-chain flow ---");
+  jp3.app.state.account = "0x1111111111111111111111111111111111111111";
+  const pick = arows.find((r) => r.ok && r.sym === "BABY" && r.dirKey === "ql1ToInf") || arows.find((r) => r.ok && !r.isBenchmark);
+  await jp3.app.startArbFlow(pick, "single");
+  const fl4 = jp3.app.state.xflow;
+  console.log("[V4-JP] prefilled flow: sym", fl4 && fl4.sym, "| from", fl4 && fl4.fromId, "-> to", fl4 && fl4.toId, "| src", fl4 && fl4.srcKey, "| arbReturn:", fl4 && fl4.arbReturn, "| xFrom select:", jp3.els.xFromToken.value, "| xAmount:", jp3.els.xAmount.value);
+  await jp3.app.startArbFlow(pick, "rt");
+  console.log("[V4-JP] RT prefill: arbReturn:", jp3.app.state.xflow && jp3.app.state.xflow.arbReturn, "| xFlow html has return note:", jp3.els.xFlow.innerHTML.includes("往復の戻り"));
+
+  /* ================= v4 arbitrage (EN) ================= */
+  const en3 = loadPage("en");
+  en3.app.setMode("cross");
+  en3.app.setXSrc("infinite");
+  en3.els.xFromToken.value = "native"; en3.els.xToToken.value = "native"; en3.els.xAmount.value = "100";
+  await en3.app.onXQuote();
+  console.log("\n[V4-EN] benchmark line in candidates:", en3.els.xCandidates.innerHTML.includes("Benchmark"), "| benchmark:", en3.app.state.xBenchmark && en3.app.state.xBenchmark.sym);
+  en3.els.arbAmount.value = "100000000";
+  await en3.app.onArbScan();
+  console.log("[V4-EN] board rows:", en3.app.state.arbRows.length, "| html single group:", en3.els.arbBoard.innerHTML.includes("One-way arbitrage"), "| RT group:", en3.els.arbBoard.innerHTML.includes("Round-trip"), "| status:", en3.els.arbStatus.textContent.slice(0, 60));
 
   console.log("\nHARNESS DONE");
 })().catch((e) => { console.error("HARNESS FAILED:", e); process.exit(1); });

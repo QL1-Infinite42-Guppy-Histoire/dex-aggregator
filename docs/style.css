@@ -19,6 +19,14 @@ button.big.swap { background: #1d9e62; }
 .connect-row { margin-top: 10px; }
 .fld { display: block; margin-top: 10px; font-size: 12px; color: #9fb0c9; }
 .fld select, .fld input { width: 100%; box-sizing: border-box; margin-top: 4px; padding: 12px; font-size: 16px; border-radius: 10px; border: 1px solid #33405e; background: #0f1420; color: #fff; }
+
+/* ---- v4 arbitrage ---- */
+.badge.gap { background: #c9a227; color: #1a1405; border-radius: 6px; padding: 2px 7px; font-size: 11px; font-weight: 700; }
+.badge.bench { background: #232c44; color: #c3cad7; border-radius: 6px; padding: 2px 7px; font-size: 11px; }
+.arb-group { font-weight: 700; color: #e8ecf3; margin: 14px 0 2px; font-size: 14px; line-height: 1.5; }
+.arb-net.pos { color: #7be2ae; }
+.arb-net.neg { color: #ff9d9d; }
+.arb-neg-label { color: #ff9d9d; }
 .chips { margin-top: 8px; }
 .chip { background: #232c44; color: #c3cad7; padding: 7px 12px; font-size: 13px; }
 .flip-row { text-align: center; margin: 10px 0 2px; }

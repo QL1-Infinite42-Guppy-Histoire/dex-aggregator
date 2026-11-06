@@ -1,4 +1,4 @@
-# DEXアグリゲーター（42 Chain / QL1 / 42 Testnet）— v3
+# DEXアグリゲーター（42 Chain / QL1 / 42 Testnet）— v4
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -58,6 +58,66 @@
   （ラッパー無し）。ルーターが取引トークンをロックボックス経由で xERC20 化する処理は
   その1件のトランザクションの中で行われます（実送信のログで確認済み）。
 - テストネットには QL1 とのブリッジが確認できていないため、クロスチェーンは本番同士だけです。
+
+## 価格差（裁定）（v4）
+
+QL1 と 42 Chain の間の価格差を、2つの形で表面化します。
+
+### クロスチェーン見積もりのベンチマーク＋節約バッジ
+
+- 各クロス見積もりで「素直なルート」を**ベンチマーク**にします。中継 QOM の候補と、
+  出すトークンそのものを直接ブリッジできる場合はその候補のうち、多い方です。
+- 全候補カードにベンチマークとの差（%と量）を表示し、いちばん多い候補が
+  ベンチマークより 0.5% 超多いときは「価格差で +○%」バッジが付きます。
+- 中継候補は3形態を区別して表示します：
+  (a) 出すトークンそのものを**直接ブリッジ**（交換1は「直接ブリッジ（スワップなしで
+  そのまま入る）」と表示。例：Infinite の CAW をそのまま送って QL1 で qCAW → QOM）、
+  (b) 別トークンに換えてからブリッジ（購入型中継）、(c) QOM 中継（ベンチマーク）。
+- 実測（2026-11-06、ユーザーの例）：42 Chain の **100 [42] → QL1 QOM** では
+  中継 BABY が **114,095,040,112 QOM** で、ベンチマーク（中継 QOM の
+  107,256,718,156 QOM）より **+6.38%**。ただし **5,000 [42]** では BABY の
+  プールが吸収しきれず **−63.50%** と逆転（境目は 100〜200 [42] の間：
+  200 では −5.3%）。価格差は金額で消えるので、自分の金額での見積もりが必須です。
+- 直接ブリッジの実測：CAW 10,000（Infinite→QL1 QOM）は直接ブリッジ
+  20,196.81 QOM で、QOM ベンチマーク 20,381.03 QOM より −0.90%（この金額では
+  わずかにベンチマーク勝ち）。O 10,000,000 では直接ブリッジ自体が
+  ベンチマークになり 4,166,595,462 QOM（QOM 経由は −8.55%）。
+  逆向き qCAW 10,000（QL1→42 Chain QOM）でも直接ブリッジがベンチマーク
+  （20,381.03 QOM、QOM 経由は −0.90%）。
+
+### 価格差ボード
+
+- 基準通貨 **QOM** で始めて QOM で終わるルートを、全ブリッジ可能トークン
+  （QOM / BABY / CAW / FATHER / HAWK / KET / O / OSAK）× 両方向で計算します。
+  QL1 側のトークンは QL1 版アドレス（qCAW = 0xd214…9d0d、O = 0x6c39…bed4 など）で
+  評価し、Infinite 側の同名アドレスとは混同しません。
+- **スポット価格の比較は使いません。** 薄いプールではスポット差が嘘になるため、
+  全行とも実際のルート見積もり（各レッグの `getAmountsOut`）で計算します。
+- **片道裁定**：QOM（チェーンA）→ T に交換 → ブリッジ → T → QOM（チェーンB）。
+  ベンチマークは QOM の直接ブリッジ（1:1 で開始額のまま）。
+  差し引きはブリッジのメッセージ代を QOM 換算して差し引いたもの
+  （42 Chain 発は `quoteNative` の実額を 42→QOM の実見積もりで換算、実測
+  約 3,454,301,132 QOM ≈ 2.94 [42]；QL1 発は 0）。DEX 手数料は見積もり内に
+  含まれます。ガス代は概算のため含みません（サイトに明記）。
+- **往復裁定**：片道の後、得た QOM を元のチェーンへブリッジして戻す。
+  両方向のメッセージ代を差し引きます。「ブリッジ2回＝価格変動の時間が2倍」の
+  強い注意つき。行を押すと片道目のガイド式フローが事前入力され、完了後に
+  戻りのフローを開始するボタンが出ます（自動送信はしません）。
+- マイナスの行も灰色で「今はマイナス（裁定なし）」と表示します。プラスが
+  無いときは無いと正直に出します。レッグが成立しない・ブリッジ最小量未満の
+  行は「見積もり不可」＋理由です。
+- 金額プリセットは 1億 / 10億 / 1000億 QOM、初期値は **1000億 QOM**。
+  理由：42 Chain 発の固定メッセージ代（約34.5億 QOM 換算）が、10億 QOM では
+  開始額の345%に達して全行が手数料だけで意味を失うため。1000億では約3.5%に
+  収まります。逆に 1兆 QOM では全行が価格への影響で大幅マイナスでした。
+  小さい金額（1億）では QL1 発の小口の差が見えます（実測 OSAK +187.56%、
+  CAW +0.85%。ただし OSAK の +187% は絶対額では約1.9億 QOM の話で、
+  1000億では −87.17% に消えます）。
+- ボード実測スナップショット（1000億 QOM、2026-11-06）：プラスの片道は
+  **0件**。最良は QOM（QL1→42、そのまま）±0%、BABY（42→QL1）−3.91%
+  （手数料を引く前は −0.46% で、手数料 3.45% が効いています）。
+  往復の最良も同 −3.45%（QOM 42→QL1→42、手数料1回分のみ）。
+  つまりこの金額・この時点では裁定は存在せず、ボードはその通りに表示します。
 
 ## ルートと分割の探し方
 
@@ -132,6 +192,27 @@ deliveries" are an indexer gap; deliveries are confirmed on-chain. Sending
 from 42 Chain additionally pays the messaging fee quoted live by the
 BridgeRouter (measured approx. 2.94 [42]); sampled QL1 sends all paid 0.
 
+**New in v4 — price gaps (arbitrage):** cross-chain quotes now carry a benchmark
+(the better of the via-QOM route and, when the token you pay is itself
+bridgeable, the direct-bridge route), show every candidate's difference from
+it, and badge the best candidate with "Price gap +x%" when it beats the
+benchmark by over 0.5% (measured: 100 [42] -> QOM on QL1 via BABY paid
++6.38% over the QOM benchmark; at 5,000 [42] the BABY pools cannot absorb
+the size and it flips to −63.5%). Direct bridges are labelled as such (no
+swap on the source side; e.g. CAW held on 42 Chain bridged as-is and sold
+for QOM on QL1 measured 20,196.81 QOM vs the 20,381.03 QOM benchmark at
+10,000 CAW — at that size the benchmark was slightly better, and the board
+says so). A new **Price gaps board** computes, in QOM terms, one-way and
+round-trip arbitrage routes for all 8 bridgeable tokens in both directions
+using real route quotes only (no spot-price comparisons — these pools are
+too thin for spots to be honest), deducting bridge messaging fees converted
+to QOM (42 Chain origin measured approx. 3.45B QOM; QL1 origin 0). Negative
+routes are shown greyed as "no arbitrage right now" and unquotable ones
+with their reason; at the 100B QOM default, the build-time snapshot had
+**zero** positive one-way routes, and the board displays exactly that.
+Clicking a route pre-fills the guided cross-chain flow (round trips offer
+the return leg after the first completes; nothing is auto-sent).
+
 Honest limits: executing a split in one transaction requires a dedicated aggregator
 contract. The contract (**SplitSwap**, in `contracts/`) is written and compiled but **not
 deployed yet** — on mainnet, splits are quote-only; on the testnet, deployment is blocked
@@ -148,6 +229,7 @@ https://ql1-infinite42-guppy-histoire.github.io/dex-aggregator/en.html
 ```sh
 node probe/probe.cjs               # ライブ見積もり・分割評価・calldata構築の検証（送信はしません）
 node probe/crosschain.cjs          # クロスチェーン見積もり（2方向）・ブリッジcalldata・delivered再確認
+node probe/arb.cjs                 # 価格差: 具体例 (42->QOM)・直接ブリッジ比較・ボード全行スナップショット
 node tools/harness.cjs             # 出荷コードを DOM スタブ上で動かす検証（JP/EN/テストネット/クロスチェーン）
 node tools/enumerate_testnet.cjs   # テストネット factory の全ペア列挙
 node tools/bridge/sample_counts.cjs    # ブリッジ各ルーターの実txメソッド集計
@@ -156,6 +238,12 @@ node tools/bridge/sample_delivery.cjs  # 実送信の messageId → 届け先 ma
 
 ## 更新履歴
 
+- **v4（2026-11-06）**: 価格差（裁定）の表面化。クロスチェーン見積もりに
+  ベンチマーク（中継 QOM / 直接ブリッジの多い方）との差表示と「価格差で +○%」
+  バッジ、直接ブリッジの明示を追加。「価格差ボード」を新設：QOM 建てで
+  全8トークン×両方向の片道・往復裁定を実見積もり（スポット比較なし）で計算し、
+  メッセージ代（QOM換算）を差し引いて並べ、行クリックでガイド式フローに
+  事前入力。マイナス・見積もり不可も正直に表示。
 - **v3（2026-11-06）**: クロスチェーン・モード（QL1 ⇔ 42 Chain）。中継トークンごとの
   交換→ブリッジ→交換の束ね見積もりとランキング、4ステップのガイド式実行（状態は
   localStorage に保存・再開可、到着は残高監視で自動検出）。有効範囲は実送信の
