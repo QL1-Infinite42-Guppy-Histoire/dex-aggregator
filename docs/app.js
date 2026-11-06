@@ -586,37 +586,153 @@ function spotOutFor(route, amountIn, pairOf, info) {
   return cur;
 }
 
-/* ---------- split evaluation (1inch-style allocation search) ---------- */
+/* ---------- split allocation refinement (generic hill climbing) ----------
+   配分 [{cand, pct}] (pct 合計 100) を、ステップ幅 5% → 2% → 1% の順に
+   「1パートから別パートへ step% 移す」「未使用の候補を 1% で追加する
+   (既存パートから比例的に削る)」ムーブを全て評価し、最良の改善を採用
+   し続ける。改善ムーブが無くなったら止まる (局所最適)。scoreMany は
+   配分の配列を受け取り、各配分の {totalOut, ...} か null を返す非同期
+   関数 (呼び出し側が見積もりを一括実行する)。 */
+async function refineSplitAllocation(startAlloc, startScore, scoreMany, opts) {
+  const o = opts || {};
+  const maxParts = o.maxParts || 5;
+  const maxIterations = o.maxIterations || 150;
+  const steps = o.steps || [5, 2, 1];
+  const allowed = o.allowed || (() => true);
+  const addCandidates = o.addCandidates || [];
+  const keyOf = o.keyOf || ((c) => c);
+  const budget = o.budget || null;
+  let cur = startAlloc.map((p) => ({ cand: p.cand, pct: p.pct }));
+  let curScore = startScore;
+  let iterations = 0, evaluatedMoves = 0;
+  const sigOf = (alloc) => alloc.map((p) => keyOf(p.cand) + ":" + p.pct).sort().join(",");
+  const genMoves = (alloc, step) => {
+    const moves = [];
+    const seen = new Set([sigOf(alloc)]);
+    const push = (a) => {
+      if (a.length < 2 || a.length > maxParts) return;
+      const s = sigOf(a);
+      if (seen.has(s)) return;
+      seen.add(s); moves.push(a);
+    };
+    for (let i = 0; i < alloc.length; i++) {
+      for (let j = 0; j < alloc.length; j++) {
+        if (i === j || alloc[i].pct < step) continue;
+        const na = alloc.map((p) => ({ cand: p.cand, pct: p.pct }));
+        na[i].pct -= step; na[j].pct += step;
+        const f = na.filter((p) => p.pct > 0);
+        if (f.length < 2) continue;
+        if (!allowed(f.map((p) => p.cand))) continue;
+        push(f);
+      }
+    }
+    if (alloc.length < maxParts) {
+      const inPlan = new Set(alloc.map((p) => keyOf(p.cand)));
+      for (const cand of addCandidates) {
+        if (inPlan.has(keyOf(cand))) continue;
+        if (!allowed([...alloc.map((p) => p.cand), cand])) continue;
+        const na = alloc.map((p) => ({ cand, pct: Math.floor((p.pct * 99) / 100) })).filter((p) => p.pct > 0);
+        if (!na.length) continue;
+        let deficit = 99 - na.reduce((s, p) => s + p.pct, 0);
+        const order = na.map((p, i) => i).sort((a, b) => na[b].pct - na[a].pct);
+        for (let k = 0; deficit > 0 && order.length; k++) { na[order[k % order.length]].pct += 1; deficit--; }
+        na.push({ cand, pct: 1 });
+        if (na.reduce((s, p) => s + p.pct, 0) !== 100) continue;
+        push(na);
+      }
+    }
+    return moves;
+  };
+  for (const step of steps) {
+    while (iterations < maxIterations) {
+      if (budget && !budget()) return { alloc: cur, score: curScore, iterations, evaluatedMoves };
+      const moves = genMoves(cur, step);
+      if (!moves.length) break;
+      const scores = await scoreMany(moves);
+      evaluatedMoves += moves.length;
+      let bi = -1;
+      for (let i = 0; i < moves.length; i++) {
+        if (scores[i] && (bi < 0 || scores[i].totalOut > scores[bi].totalOut)) bi = i;
+      }
+      if (bi >= 0 && scores[bi].totalOut > curScore.totalOut) { cur = moves[bi]; curScore = scores[bi]; iterations++; }
+      else break;
+    }
+    if (iterations >= maxIterations) break;
+  }
+  return { alloc: cur, score: curScore, iterations, evaluatedMoves };
+}
+
+/* ---------- split evaluation (1inch-style allocation search) ----------
+   v6.2: ペアは 1% 刻みで全探索し、最良配分を 1% 刻みの微調整
+   (refineSplitAllocation) で詰める。同一チェーン側も同じ微調整を使う。 */
 async function evaluateSplits(chainObj, routes, amountIn) {
   const top = routes.slice(0, 3);
   if (top.length < 2 || amountIn <= 0n) return { evaluated: 0, best: null, plan: null };
-  const candidates = [];
-  for (const pct of [90, 80, 70, 60, 50]) candidates.push([[top[0], pct], [top[1], 100 - pct]]);
-  if (top.length >= 3) for (const sh of [[50, 30, 20], [40, 30, 30], [60, 25, 15], [34, 33, 33]]) candidates.push(sh.map((pct, i) => [top[i], pct]));
+  const routeIdx = new Map(); top.forEach((r, i) => routeIdx.set(r, i));
   // leg amountIns (last leg takes the remainder so the sum is exact)
-  const candLegs = candidates.map((cand) => {
+  const legsOf = (alloc) => {
     const legs = []; let used = 0n;
-    cand.forEach(([route, pct], i) => {
-      const amt = i === cand.length - 1 ? amountIn - used : (amountIn * BigInt(pct)) / 100n;
-      used += amt; legs.push({ route, pct, amountIn: amt, amountOut: null });
+    alloc.forEach((l, i) => {
+      const amt = i === alloc.length - 1 ? amountIn - used : (amountIn * BigInt(l.pct)) / 100n;
+      used += amt; legs.push({ route: l.cand, pct: l.pct, amountIn: amt, amountOut: null });
     });
     return legs;
-  }).filter((legs) => legs.every((l) => l.amountIn > 0n));
-  const flat = [];
-  candLegs.forEach((legs, ci) => legs.forEach((leg, li) => flat.push({ ci, li, call: [chainObj.router, encodeGetAmountsOut(leg.amountIn, leg.route.path)] })));
-  const results = await rpcBatch(chainObj, flat.map((f) => f.call));
-  flat.forEach((f, i) => {
-    const amts = decodeAmountsOut(results[i]);
-    candLegs[f.ci][f.li].amountOut = amts && amts.length ? amts[amts.length - 1] : null;
-  });
+  };
+  const cache = new Map(); // "routeIdx|amountIn" -> amountOut | null
+  const CHUNK = 150;
+  async function ensure(legsList) {
+    const missing = [];
+    const seen = new Set();
+    for (const leg of legsList) {
+      if (leg.amountIn <= 0n) continue;
+      const key = routeIdx.get(leg.route) + "|" + leg.amountIn.toString();
+      if (!cache.has(key) && !seen.has(key)) { seen.add(key); missing.push({ key, leg }); }
+    }
+    for (let s = 0; s < missing.length; s += CHUNK) {
+      const chunk = missing.slice(s, s + CHUNK);
+      const res = await rpcBatch(chainObj, chunk.map((m) => [chainObj.router, encodeGetAmountsOut(m.leg.amountIn, m.leg.route.path)]));
+      chunk.forEach((m, k) => { const amts = decodeAmountsOut(res[k]); cache.set(m.key, amts && amts.length ? amts[amts.length - 1] : null); });
+    }
+  }
+  const scoreFromCache = (alloc) => {
+    const legs = legsOf(alloc);
+    if (legs.some((l) => l.amountIn <= 0n)) return null;
+    let total = 0n;
+    for (const leg of legs) {
+      const out = cache.get(routeIdx.get(leg.route) + "|" + leg.amountIn.toString());
+      if (out == null || out <= 0n) return null;
+      leg.amountOut = out; total += out;
+    }
+    return { legs, totalOut: total };
+  };
+  let evaluated = 0;
   let best = null;
-  for (const legs of candLegs) {
-    if (legs.some((l) => l.amountOut == null || l.amountOut <= 0n)) continue;
-    const totalOut = legs.reduce((s, l) => s + l.amountOut, 0n);
-    if (!best || totalOut > best.totalOut) best = { legs, totalOut };
+  const considerAll = async (allocs) => {
+    if (!allocs.length) return;
+    await ensure(allocs.flatMap(legsOf));
+    for (const a of allocs) {
+      evaluated++;
+      const s = scoreFromCache(a);
+      if (s && (!best || s.totalOut > best.totalOut)) best = s;
+    }
+  };
+  // stage 1: pairs at 1% steps among the top routes + classic triple templates
+  const allocs = [];
+  for (let i = 0; i < top.length; i++) for (let j = i + 1; j < top.length; j++)
+    for (let p = 1; p <= 99; p++) allocs.push([{ cand: top[i], pct: p }, { cand: top[j], pct: 100 - p }]);
+  if (top.length >= 3) for (const sh of [[50, 30, 20], [40, 30, 30], [60, 25, 15], [34, 33, 33]]) allocs.push(sh.map((pct, i) => ({ cand: top[i], pct })));
+  await considerAll(allocs);
+  // stage 2: 1% hill-climb refinement (transfers + adds within the top routes)
+  if (best) {
+    const scoreMany = async (al) => { await ensure(al.flatMap(legsOf)); return al.map((a) => scoreFromCache(a)); };
+    const refined = await refineSplitAllocation(
+      best.legs.map((l) => ({ cand: l.route, pct: l.pct })), best, scoreMany,
+      { addCandidates: top, maxParts: 3, keyOf: (r) => routeIdx.get(r), maxIterations: 100 });
+    evaluated += refined.evaluatedMoves;
+    if (refined.score && refined.score.totalOut > best.totalOut) best = refined.score;
   }
   const plan = best && best.totalOut > routes[0].amountOut ? best : null;
-  return { evaluated: candLegs.length, best, plan };
+  return { evaluated, best, plan };
 }
 
 /* ---------- quoting: compare ALL routes + splits ---------- */
@@ -931,7 +1047,14 @@ async function quoteCrossPlan(srcKey, fromTok, dstKey, toTok, amountIn) {
    - 候補 = 全体ルートの最終額順 上位6件 + 中継ごとの最良ルート (最大8件)。
      同じ中継の異なるパス (leg1 / leg2 バリアント) も別々の候補。
    - 探索 = 候補の全ペア・全3分割・全4分割 × 10%刻み配分 (各パート10%以上)。
-     10%刻みのグリッド探索であり、全金額・全ルートの厳密な最適化ではない。
+   v6.2 で探索を 1% 刻みに精密化 (ユーザー要望「1%刻みで最善の結果を」):
+   - ステージ1a: 上記 10% グリッド (5分割まで拡張)。
+   - ステージ1b: 候補プール内のペアを 1% 刻みで全探索 (99配分/ペア)。
+   - ステージ2: 最良配分から山登り微調整 (ステップ 5% → 2% → 1%。
+     パート間の移し替え + 未使用候補の 1% 追加 — 追加候補はプールでなく
+     全体ルート一覧の全件から。パート数は最大5)。1% ムーブで改善が
+     無くなったら終了する局所最適であり、数学的な大域最適の証明ではない。
+   - 全ステージで (ルート, 金額) 単位の見積もりキャッシュを共有する。
    - 同じ中継への複数パートは、その中継の交換2が無い (中継 = 宛先トークン
      そのもの) ときだけ許可する。交換2が実在する中継を2パートに分けると、
      宛先側では同一プールへの交換が2回続くことになり、2件目が1件目で動いた
@@ -951,13 +1074,13 @@ function crossSplitPool(enabled) {
   }
   return pool;
 }
-const X_SPLIT_COMPS = { 2: [], 3: [], 4: [] };
+const X_SPLIT_COMPS = { 2: [], 3: [], 4: [], 5: [] };
 (function buildSplitComps() {
   const gen = (n, total, prefix) => {
     if (n === 1) { if (total >= 10) X_SPLIT_COMPS[prefix.length + 1].push([...prefix, total]); return; }
     for (let p = 10; p <= total - 10 * (n - 1); p += 10) gen(n - 1, total - p, [...prefix, p]);
   };
-  gen(2, 100, []); gen(3, 100, []); gen(4, 100, []);
+  gen(2, 100, []); gen(3, 100, []); gen(4, 100, []); gen(5, 100, []);
 })();
 /* same-intermediate rule (see header): multiple parts on one intermediate are
    allowed only when that intermediate's leg 2 is the identity (the bridged
@@ -989,13 +1112,97 @@ async function requoteSplitPart(srcKey, dstKey, cand, amount) {
   const v = amts2 && amts2.length ? amts2[amts2.length - 1] : null;
   return v != null && v > 0n ? { leg1Out: o1, finalOut: v } : null;
 }
+/* ---------- v6.2: cross-split part quoter ----------
+   (候補ルート, 金額) 単位でパート見積もりをキャッシュする。未見積もり分は
+   送信チェーン (交換1) → 宛先チェーン (交換2) の2ラウンドで一括取得し、
+   探索の全ステージ (10%グリッド / ペア1% / 微調整) でキャッシュを共有する。
+   1回の rpcBatch が大きくなりすぎないよう 150 件ずつに区切る。 */
+function makeCrossSplitQuoter(srcKey, dstKey, candIdx) {
+  const cache = new Map(); // "candIdx|amount" -> {leg1Out, finalOut} | null (null = その金額では不成立)
+  const stats = { partQuotes: 0, batches: 0 };
+  const CHUNK = 150;
+  async function ensure(jobs) {
+    const missing = [];
+    const seen = new Set();
+    for (const j of jobs) {
+      if (!j || j.amount == null || j.amount <= 0n) continue;
+      const key = candIdx.get(j.cand) + "|" + j.amount.toString();
+      if (!cache.has(key) && !seen.has(key)) { seen.add(key); missing.push({ key, cand: j.cand, amount: j.amount }); }
+    }
+    for (let s = 0; s < missing.length; s += CHUNK) {
+      const chunk = missing.slice(s, s + CHUNK);
+      stats.partQuotes += chunk.length;
+      // round 1: leg-1 quotes on the source chain (identity leg 1 = direct bridge)
+      const leg1Out = new Map();
+      const srcCalls = [], srcKeys = [];
+      for (const m of chunk) {
+        if (!m.cand.leg1Path) leg1Out.set(m.key, m.amount);
+        else { srcKeys.push(m.key); srcCalls.push([CHAINS[srcKey].router, encodeGetAmountsOut(m.amount, m.cand.leg1Path)]); }
+      }
+      if (srcCalls.length) {
+        stats.batches++;
+        const res = await rpcBatch(CHAINS[srcKey], srcCalls);
+        srcKeys.forEach((key, k) => { const amts = decodeAmountsOut(res[k]); leg1Out.set(key, amts && amts.length ? amts[amts.length - 1] : null); });
+      }
+      // round 2: leg-2 quotes on the destination chain (bridge minimum enforced on leg-1 out)
+      const dstCalls = [], dstList = [];
+      for (const m of chunk) {
+        const o1 = leg1Out.get(m.key);
+        if (o1 == null || o1 <= 0n || o1 < (10n ** BigInt(m.cand.tSrc.decimals))) { cache.set(m.key, null); continue; }
+        if (!m.cand.leg2Path) { cache.set(m.key, { leg1Out: o1, finalOut: o1 }); continue; }
+        dstList.push({ key: m.key, leg1Out: o1 });
+        dstCalls.push([CHAINS[dstKey].router, encodeGetAmountsOut(o1, m.cand.leg2Path)]);
+      }
+      if (dstCalls.length) {
+        stats.batches++;
+        const res = await rpcBatch(CHAINS[dstKey], dstCalls);
+        dstList.forEach((d, k) => {
+          const amts = decodeAmountsOut(res[k]);
+          const v = amts && amts.length ? amts[amts.length - 1] : null;
+          cache.set(d.key, v != null && v > 0n ? { leg1Out: d.leg1Out, finalOut: v } : null);
+        });
+      }
+    }
+  }
+  function get(cand, amount) { return cache.get(candIdx.get(cand) + "|" + amount.toString()) || null; }
+  return { ensure, get, stats };
+}
 async function evaluateCrossSplit(srcKey, dstKey, amountIn, cands) {
   const enabled = (cands || []).filter((c) => c.enabled);
   const bestSingle = enabled.length ? enabled[0] : null;
   if (!bestSingle || enabled.length < 2 || amountIn <= 0n) return { evaluated: 0, best: null, plan: null, bestSingle };
   const pool = crossSplitPool(enabled);
   if (pool.length < 2) return { evaluated: 0, best: null, plan: null, bestSingle };
-  const allocations = [];
+  const t0 = Date.now();
+  const candIdx = new Map(); enabled.forEach((c, i) => candIdx.set(c, i));
+  const quoter = makeCrossSplitQuoter(srcKey, dstKey, candIdx);
+  const partAmount = (pct) => (amountIn * BigInt(pct)) / 100n;
+  const jobsOf = (alloc) => alloc.map((l) => ({ cand: l.cand, amount: partAmount(l.pct) }));
+  const scoreFromCache = (alloc) => {
+    let total = 0n;
+    const parts = [];
+    for (const l of alloc) {
+      const amt = partAmount(l.pct);
+      if (amt <= 0n) return null;
+      const q = quoter.get(l.cand, amt);
+      if (!q) return null;
+      total += q.finalOut;
+      parts.push({ cand: l.cand, pct: l.pct, amountIn: amt, leg1Out: q.leg1Out, finalOut: q.finalOut });
+    }
+    return { parts, totalOut: total };
+  };
+  let evaluated = 0;
+  let best = null;
+  const considerAll = async (allocs) => {
+    if (!allocs.length) return;
+    await quoter.ensure(allocs.flatMap(jobsOf));
+    for (const a of allocs) {
+      evaluated++;
+      const s = scoreFromCache(a);
+      if (s && (!best || s.totalOut > best.totalOut)) best = s;
+    }
+  };
+  // ---- stage 1a: 10% grid over the pool (2..5 parts, each >= 10%) ----
   const combosOf = (n) => {
     const out = [];
     const rec = (start, picked) => {
@@ -1005,62 +1212,41 @@ async function evaluateCrossSplit(srcKey, dstKey, amountIn, cands) {
     rec(0, []);
     return out;
   };
-  for (const n of [2, 3, 4]) {
+  const gridAllocs = [];
+  for (const n of [2, 3, 4, 5]) {
     if (pool.length < n) break;
     for (const idxs of combosOf(n)) {
       const routes = idxs.map((i) => pool[i]);
       if (!splitAllocAllowed(routes)) continue;
       for (const comp of X_SPLIT_COMPS[n]) {
-        allocations.push(routes.map((cand, k) => ({ cand, pct: comp[k] })));
+        gridAllocs.push(routes.map((cand, k) => ({ cand, pct: comp[k] })));
       }
     }
   }
-  const candIdx = new Map(); enabled.forEach((c, i) => candIdx.set(c, i));
-  const jobKey = (cand, amount) => candIdx.get(cand) + "|" + amount.toString();
-  const jobs = new Map();
-  const allocLegs = allocations.map((alloc) => {
-    const legs = alloc.map((l) => ({ cand: l.cand, pct: l.pct, amountIn: (amountIn * BigInt(l.pct)) / 100n }));
-    for (const leg of legs) if (leg.amountIn > 0n) jobs.set(jobKey(leg.cand, leg.amountIn), { cand: leg.cand, amount: leg.amountIn });
-    return legs;
-  }).filter((legs) => legs.every((l) => l.amountIn > 0n));
-  // round 1: leg-1 quotes on the source chain (identity leg 1 = direct bridge)
-  const jobEntries = [...jobs.entries()];
-  const leg1Out = new Map();
-  const srcCalls = [], srcKeys = [];
-  for (const [key, job] of jobEntries) {
-    if (!job.cand.leg1Path) leg1Out.set(key, job.amount);
-    else { srcKeys.push(key); srcCalls.push([CHAINS[srcKey].router, encodeGetAmountsOut(job.amount, job.cand.leg1Path)]); }
+  await considerAll(gridAllocs);
+  // ---- stage 1b: pairs brute-forced at 1% steps over the top-5 pool routes
+  // (quote-count control; stage 2 can still add/grow any other route) ----
+  const pairPool = pool.slice(0, 5);
+  const pairAllocs = [];
+  for (let i = 0; i < pairPool.length; i++) for (let j = i + 1; j < pairPool.length; j++) {
+    if (!splitAllocAllowed([pairPool[i], pairPool[j]])) continue;
+    for (let p = 1; p <= 99; p++) pairAllocs.push([{ cand: pairPool[i], pct: p }, { cand: pairPool[j], pct: 100 - p }]);
   }
-  if (srcCalls.length) {
-    const res = await rpcBatch(CHAINS[srcKey], srcCalls);
-    srcKeys.forEach((key, k) => { const amts = decodeAmountsOut(res[k]); leg1Out.set(key, amts && amts.length ? amts[amts.length - 1] : null); });
-  }
-  // round 2: leg-2 quotes on the destination chain (bridge minimum enforced on leg-1 out)
-  const finalOut = new Map();
-  const dstCalls = [], dstKeys = [];
-  for (const [key, job] of jobEntries) {
-    const o1 = leg1Out.get(key);
-    if (o1 == null || o1 <= 0n) continue;
-    if (o1 < (10n ** BigInt(job.cand.tSrc.decimals))) continue;
-    if (!job.cand.leg2Path) finalOut.set(key, o1);
-    else { dstKeys.push(key); dstCalls.push([CHAINS[dstKey].router, encodeGetAmountsOut(o1, job.cand.leg2Path)]); }
-  }
-  if (dstCalls.length) {
-    const res = await rpcBatch(CHAINS[dstKey], dstCalls);
-    dstKeys.forEach((key, k) => { const amts = decodeAmountsOut(res[k]); const v = amts && amts.length ? amts[amts.length - 1] : null; if (v != null && v > 0n) finalOut.set(key, v); });
-  }
-  let best = null;
-  for (const legs of allocLegs) {
-    let total = 0n, ok = true;
-    const parts = legs.map((leg) => {
-      const key = jobKey(leg.cand, leg.amountIn);
-      const fo = finalOut.get(key);
-      if (fo == null) { ok = false; return null; }
-      total += fo;
-      return { cand: leg.cand, pct: leg.pct, amountIn: leg.amountIn, leg1Out: leg1Out.get(key), finalOut: fo };
-    });
-    if (!ok || parts.some((p) => !p)) continue;
-    if (!best || total > best.totalOut) best = { parts, totalOut: total };
+  await considerAll(pairAllocs);
+  // ---- stage 2 (v6.2): hill-climb refinement 5% -> 2% -> 1%. Adds may come
+  // from ANY enabled full route (not just the pool), plans may reach 5 parts.
+  let refineInfo = { iterations: 0, evaluatedMoves: 0 };
+  if (best) {
+    const scoreMany = async (allocs) => {
+      await quoter.ensure(allocs.flatMap(jobsOf));
+      return allocs.map((a) => scoreFromCache(a));
+    };
+    const refined = await refineSplitAllocation(
+      best.parts.map((p) => ({ cand: p.cand, pct: p.pct })), best, scoreMany,
+      { addCandidates: enabled, maxParts: 5, allowed: splitAllocAllowed, keyOf: (c) => candIdx.get(c), maxIterations: 150, budget: () => quoter.stats.partQuotes < 8000 });
+    refineInfo = { iterations: refined.iterations, evaluatedMoves: refined.evaluatedMoves };
+    evaluated += refined.evaluatedMoves;
+    if (refined.score && refined.score.totalOut > best.totalOut) best = refined.score;
   }
   if (best) {
     // display order: largest part first; then fold the floor-rounding dust
@@ -1077,7 +1263,7 @@ async function evaluateCrossSplit(srcKey, dstKey, amountIn, cands) {
     }
   }
   const plan = best && best.totalOut > bestSingle.finalOut ? best : null;
-  return { evaluated: allocLegs.length, best, plan, bestSingle };
+  return { evaluated, best, plan, bestSingle, refineStats: { partQuotes: quoter.stats.partQuotes, batches: quoter.stats.batches, iterations: refineInfo.iterations, ms: Date.now() - t0 } };
 }
 
 /* ---------- v6: split-flow arrival attribution (pure; harness-tested) ----------
@@ -2443,6 +2629,6 @@ if (typeof document !== "undefined" && document.getElementById && document.getEl
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { CHAINS, STR, LANG, state, parseAmount, formatAmount, formatRate, formatGas, encAddr, encUint, encLegsTail, encodeGetAmountsOut, decodeAmountsOut, buildCandidatePaths, fetchQuotesForTokens, evaluateSplits, buildSwapTx, buildApproveTx, buildSplitTx, applySlippageBps, fetchTokenMeta, tokenById, allTokens, symbolFor, onQuote, onCaAdd, selectRoute, selectSplit, selectedRoute, setChain, estimateGasUnitsSingle, estimateGasUnitsSplit, splitExecutable,
     BRIDGE_PAIRS, BRIDGE_MAILBOX, bridgePairBySym, fetchBestRoute, fetchRoutesOnly, attachImpactsMulti, buildBridgeTx, decodeBridgeTxData, encodeRecipient32, fetchBridgeNativeQuote, fetchBridgeDelivered, readTokenBalance, extractMessageId, quoteCrossPlan, requotePathExact, serializeXFlow, restoreXFlow, saveXFlow, loadXFlow, setMode, setXSrc, xDstKey, onXQuote, renderXCandidates, startXFlow, renderXFlow, checkArrival, doXStep1, doXStep4, doXStep4Legacy, onXAbandon,
-    evaluateCrossSplit, crossSplitPool, splitAllocAllowed, requoteSplitPart, attributeSplitArrivals, crossSplitPhase, startXSplitFlow, renderXSplitFlow, checkSplitArrival, doXSplitStep1, doXSplitStep2, doXSplitStep4,
+    evaluateCrossSplit, crossSplitPool, splitAllocAllowed, requoteSplitPart, makeCrossSplitQuoter, refineSplitAllocation, attributeSplitArrivals, crossSplitPhase, startXSplitFlow, renderXSplitFlow, checkSplitArrival, doXSplitStep1, doXSplitStep2, doXSplitStep4,
     qomTokenId, fetchBridgeFeeInQom, quoteArbRoute, quoteArbBoard, renderArbBoard, onArbScan, startArbFlow, startReturnFlow };
 }

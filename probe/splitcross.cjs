@@ -57,6 +57,7 @@ const refDiff = (raw, refFloat) => ((F18(raw) / refFloat - 1) * 100).toFixed(2) 
   console.log("中継BABY最良:", babyA && formatAmount(babyA.finalOut, 18, 2), "QOM (親実測 158,726,284,663.2)");
   const xsA = await app.evaluateCrossSplit("infinite", "ql1", amtA, candsA);
   console.log("分割探索: 評価した配分数:", xsA.evaluated, "| 最良の分割:", xsA.best && formatAmount(xsA.best.totalOut, 18, 2), "QOM | 親実測50:50 = 173,506,993,671.8 との差:", xsA.best ? refDiff(xsA.best.totalOut, 173506993671.8) : "—");
+  console.log("v6.2 微調整:", JSON.stringify(xsA.refineStats), "| v6.1 結果 176,818,000,402.81 以上か:", xsA.best ? xsA.best.totalOut >= parseAmount("176818000402.81", 18) : "—");
   console.log("分割プラン (勝ちとして出るか):", !!xsA.plan);
   if (xsA.best) {
     for (const p of xsA.best.parts) console.log(`   ${p.pct}% [中継 ${p.cand.pair.sym}] ${fullLabel(p.cand)} => ${formatAmount(p.finalOut, 18, 2)} QOM`);
@@ -102,6 +103,10 @@ const refDiff = (raw, refFloat) => ((F18(raw) / refFloat - 1) * 100).toFixed(2) 
   console.log("R2 (中継QOM・leg1 USDT→FISH→QOM) 単独:", r2 && formatAmount(r2.finalOut, 18, 2), "QOM (親実測 846,349,806,769.16)");
   const xsC = await app.evaluateCrossSplit("infinite", "ql1", amtC, candsC);
   console.log("分割探索: 評価した配分数:", xsC.evaluated, "| 最良の分割:", xsC.best && formatAmount(xsC.best.totalOut, 18, 2), "QOM (親の手計算ベスト 1,290,684,698,120.14)");
+  console.log("v6.2 微調整:", JSON.stringify(xsC.refineStats));
+  console.log("★ v6.1 結果 (1,290,684,698,120.14) 以上か:", xsC.best ? xsC.best.totalOut >= parseAmount("1290684698120.14", 18) : "—",
+    "| ★★ 目標ライン 1,300B QOM に届いたか:", xsC.best ? xsC.best.totalOut >= 1300n * 10n ** 27n : "—",
+    "| 1,300B まであと:", xsC.best ? formatAmount(1300n * 10n ** 27n - xsC.best.totalOut, 18, 2) + " QOM" : "—");
   console.log("分割プラン (勝ちとして出るか):", !!xsC.plan);
   if (xsC.best) {
     for (const p of xsC.best.parts) console.log(`   ${p.pct}% [中継 ${p.cand.pair.sym}] ${fullLabel(p.cand)} => ${formatAmount(p.finalOut, 18, 2)} QOM`);

@@ -329,5 +329,39 @@ function loadPage(lang, seedStore) {
   const xsCE = en61.app.state.xSplit;
   console.log("[V6.1-EN caseC] plan:", !!(xsCE && xsCE.plan), "| includes R2 part:", !!(xsCE && xsCE.plan && xsCE.plan.parts.some(isR2Part)), "| total >= 1,270B:", !!(xsCE && xsCE.plan && xsCE.plan.totalOut >= 1270n * 10n ** 27n));
 
+  // ---- v6.2: 1% refinement ----
+  // (a) live case C (jp61 above): refineStats present, plan keeps the v6.1 bar,
+  //     parts may carry non-round percentages after refinement.
+  console.log("\n[V6.2-JP caseC] refineStats:", JSON.stringify(xsC && xsC.refineStats), "| plan pcts:", xsC && xsC.plan && xsC.plan.parts.map((p) => p.pct).join("/"), "| has non-round pct:", !!(xsC && xsC.plan && xsC.plan.parts.some((p) => p.pct % 10 !== 0)), "| vs 1,300B line:", xsC && xsC.plan ? jp61.app.formatAmount(xsC.plan.totalOut - 1300n * 10n ** 27n, 18, 2) + " QOM" : null);
+  console.log("[V6.2-EN caseC] refineStats:", JSON.stringify(xsCE && xsCE.refineStats));
+  // (b) synthetic unit test of refineSplitAllocation with stubbed quotes:
+  // concave per-route curves with a known interior optimum at ~69/31 (not on
+  // the 10% grid). Refinement must strictly improve on the 50/50 start, land
+  // on a non-round allocation, and terminate. A third route that is strong
+  // at small amounts must enter via the add move when offered.
+  {
+    const T = 10000;
+    const curves = { A: (a) => (3 * a) / (a + 2000), B: (a) => (2 * a) / (a + 500), C: (a) => (5 * a) / (a + 100) };
+    const stubScore = async (allocs) => allocs.map((alloc) => {
+      let total = 0;
+      for (const p of alloc) {
+        const amt = Math.floor((T * p.pct) / 100);
+        if (amt <= 0) return null;
+        total += curves[p.cand.id](amt) * 1e6;
+      }
+      return { totalOut: total };
+    });
+    const cA = { id: "A" }, cB = { id: "B" }, cC = { id: "C" };
+    const start = [{ cand: cA, pct: 50 }, { cand: cB, pct: 50 }];
+    const startScore = (await stubScore([start]))[0];
+    const grid7030 = (await stubScore([[{ cand: cA, pct: 70 }, { cand: cB, pct: 30 }]]))[0];
+    const r1 = await jp6.app.refineSplitAllocation(start, startScore, stubScore, { addCandidates: [], maxParts: 2, keyOf: (c) => c.id, maxIterations: 150 });
+    const pcts1 = Object.fromEntries(r1.alloc.map((p) => [p.cand.id, p.pct]));
+    console.log("[V6.2-unit] refine 50/50 ->", JSON.stringify(pcts1), "| improved over start:", r1.score.totalOut > startScore.totalOut, "| >= best 10%-grid point (70/30):", r1.score.totalOut >= grid7030.totalOut, "| non-round pct present:", r1.alloc.some((p) => p.pct % 10 !== 0), "| terminated (iterations):", r1.iterations, "<= 150:", r1.iterations <= 150);
+    const r2 = await jp6.app.refineSplitAllocation(start, startScore, stubScore, { addCandidates: [cC], maxParts: 3, keyOf: (c) => c.id, maxIterations: 150 });
+    const pcts2 = Object.fromEntries(r2.alloc.map((p) => [p.cand.id, p.pct]));
+    console.log("[V6.2-unit] add move: C entered the plan:", (pcts2.C || 0) >= 1, "| pcts:", JSON.stringify(pcts2), "| total beats no-C optimum:", r2.score.totalOut > r1.score.totalOut, "| pct sum:", r2.alloc.reduce((s, p) => s + p.pct, 0));
+  }
+
   console.log("\nHARNESS DONE");
 })().catch((e) => { console.error("HARNESS FAILED:", e); process.exit(1); });
