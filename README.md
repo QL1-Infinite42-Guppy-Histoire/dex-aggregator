@@ -1,9 +1,12 @@
-# DEXアグリゲーター（42 Chain / QL1 / 42 Testnet）— v6.1
+# DEXアグリゲーター（42 Chain / QL1 / 42 Testnet）— v6.4
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**サイト: https://ql1-infinite42-guppy-histoire.github.io/dex-aggregator/**
+**サイト: https://ql1-infinite42-guppy-histoire.github.io/dex-aggregator/（開くと英語がデフォルト表示。日本語を選ぶと記憶されます）**
+**日本語: https://ql1-infinite42-guppy-histoire.github.io/dex-aggregator/ja.html**
 **English: https://ql1-infinite42-guppy-histoire.github.io/dex-aggregator/en.html**
+
+言語は各ページ上部のセレクタ（English / 日本語）でいつでも切り替えできます（v6.3）。
 
 42 Chain（Infinite、EVM 421018）、QL1（EVM 766）、42 テストネット（EVM 421018001）で、
 トークンの交換（スワップ）のときに**いちばん多く受け取れるプランを全部のプールから探す**サイトです（1inch と同じ考え方）。
@@ -68,46 +71,63 @@ v5 から、クロスチェーンの結果は中継ごとの最良1件ではな�
   v4 以前の保存フロー（パス無し）は従来どおり同一チェーン画面への受け渡しで継続できます。
 - 価格差ボードは従来どおりで、行クリックではその中継の最良全体ルートが選ばれます。
 
-### クロスチェーン分割（v6 / v6.1）
+### クロスチェーン分割（v6〜v6.4）
 
 v6 から、クロスチェーンでも **全体ルート同士の分割** を評価します
 （同一チェーン内モードの分割と同じ考え方を、全体ルート単位に広げたもの）。
 
 - 候補は最終見積もり順の全体ルート上位6件＋中継ごとの最良ルート（最大8件。
-  直接ブリッジの全体ルートもパート候補に含む）。v6.1 からは **同じ中継の
-  異なるパス（leg1 / leg2 バリアント）も別々の候補** になり、ペア・3分割・
-  4分割の全てを10%刻み（各パート10%以上）で探索します（10%刻みのグリッド
-  探索であり、厳密な最適化ではありません）。
-- ただし、交換2が実在する中継（中継 ≠ 宛先トークン）は1配分に1パートまで
-  です。同一プールへの宛先側の交換を2パートに分けると、独立見積もりの
-  合計が実額を上振れして見えるためです（実測: 10B QOM で BABY バリアント
-  同士の 50:50 が単独ベストを +0.33% 上回って見えた）。中継 = 宛先トークン
-  の場合は宛先側にプールが無いので、複数パート（パスの違いのみ）を許可
-  します — 同一チェーン分割で USDT→FISH→QOM と USDT→42→FISH→QOM に
-  分けるのと同じ状況です。
+  直接ブリッジの全体ルートもパート候補に含む）。同じ中継の異なるパス
+  （leg1 / leg2 バリアント）も別々の候補です。
+- **探索は2段階（v6.2）**: ステージ1 = 10%刻みグリッド（2〜5パート）＋
+  ペアの1%刻み全探索。ステージ2 = 最良配分から1%刻みで微調整する山登り
+  （ステップ 5% → 2% → 1%、パート間の移し替え＋未使用候補の追加。追加候補は
+  全体ルート一覧の全件から、パート数は最大5）。「1%刻みで微調整した最良」
+  であり、数学的な大域最適の証明ではありません。同一チェーン内の分割も
+  同じ微調整を使います。
+- **同一中継・同一の交換2は合算見積もり（v6.4）**: v6.1 では「交換2が実在
+  する中継は1配分に1パートまで」と禁止していましたが、宛先が QOM 以外の
+  とき中継 QOM の R1/R2 が組み合わせられない問題があり、禁止ではなく
+  合算モデルに置き換えました。同一中継・同一 leg2Path のパート群は、
+  交換2 をブリッジ到着額の合計で1回だけ見積もり、出力を到着額に比例配分
+  します（端数はグループ内最大パートへ）。v6.1 が避けたかった「同じ宛先
+  プールを2回独立見積もりする上振れ」はこれで構造的に消えます。交換1 は
+  従来どおりパートごとの独立見積もり（同一チェーン分割と同じ慣例）で、
+  実行もパート個別のままです（見積もりモデルだけの変更）。
 - 各パートは、その全体ルートの保存パスをそのパートの金額で実際に
   見積もり直します（交換1 → ブリッジ1:1 → 交換2。交換1の出力がブリッジ
   最小量未満のパートは不成立）。最良レッグの額の流用はしません。
 - **分割プランのカードは、最良の分割が単一ベスト全体ルートに勝ったときだけ**
   出ます。負けるときは「今回は単一ルートがいちばん」と小さく表示するだけです。
-  実測の対照（2026-11-06）:
+  実測の対照（2026-11-06、プールは時々刻々変わります）:
   - 100 USDT（42 Chain）→ QOM（QL1）: 単一ベスト 158,939,386,644.5 QOM
     （親実測と一致）。50:50（中継QOM/BABY）= 173,506,993,671.8（+9.17%、
-    親実測と完全一致）。v6 の探索最良は 40/40/20（QOM/BABY/FATHER）=
-    175,951,409,029（+10.70%）。v6.1 では中継QOM の FISH 経由バリアントも
-    入った 40/30/20/10（BABY/QOM/QOM/FATHER）= 約176.8B（**+11.2%**）が
-    最良になり、分割プランとして提示されます。
-  - 1,000 USDT（42 Chain）→ QOM（QL1）（v6.1）: 単一ベスト（中継QOM、
-    leg1 USDT→42→FISH→QOM）931,938,815,018.81 QOM。v6 のプランは
-    70/20/10 = 1,139,337,772,809 で、leg1 **USDT→FISH→QOM** のパートが
-    候補から漏れていました。v6.1 の探索最良は **40/30/20/10
-    （R1/R2/BABY/FATHER）= 1,290,684,698,120（+38.49%）** で、親の
-    手計算ベストと一致。R2 単独は 846,349,806,769 QOM です。
-  - 10B QOM（42 Chain）→ QOM（QL1）: 単独 BABY 経由 11,954,927,955
-    （+19.55%）が最良の分割 11,916,683,987（−0.32%）にも勝ち、
-    **分割プランは出ません**。全ルートが前半 QOM→FISH を共有するため
-    分散効果が薄く、限界レートの高い BABY に寄せ切る方が多い、という
-    実見積もりどおりの結論です。
+    親実測と完全一致）。v6.2 の1%微調整で 177,532,096,521（+11.62%、
+    5パート）まで伸び、v6.4 の合算モデルでは BABY・FATHER のバリアント
+    分割も使えるため 183,456,862,117（+15.33%）が最良です。
+  - 1,000 USDT（42 Chain）→ QOM（QL1）: 単一ベスト（中継QOM、
+    leg1 USDT→42→FISH→QOM）931,938,815,018.81 QOM。v6.1 の探索最良は
+    **40/30/20/10（R1/R2/BABY/FATHER）= 1,290,684,698,120（+38.49%）** で、
+    親の手計算ベストと一致（R2 単独は 846,349,806,769 QOM）。v6.2 の
+    1%微調整では 42/34/15/9 = 1,297,738,096,429（+39.19%）まで伸びたものの、
+    目標の **1,300B には 2,261,903,571（0.17%）届きませんでした**
+    （BABY の QL1 側プールが浅く限界レートが急落するのが上限）。
+    v6.4 の合算モデルでは BABY バリアント分割（12%/12%）も正当に使え、
+    37/31/12/12/8 = **1,346,962,652,325（+44.46%）** と 1,300B を超えました。
+  - 1,000 USDT（42 Chain）→ qCAW（QL1）（v6.4 の動機になったケース）:
+    v6.1 では中継QOM の R2 パートが禁止ルールで入らず、実機スクショの
+    プランは 550,960,984,867 qCAW（+28.67%）でした。v6.4 では R2 パート
+    （27%）を含む5パート = **637,090,857,770 qCAW（+48.77%）** が最良です。
+  - 10B QOM（42 Chain）→ QOM（QL1）: **v6.4 で結論が変わりました**。
+    v6.1/v6.2 では単独 BABY 経由 11,954,927,955（+19.55%）が勝ち、
+    分割プランは出ませんでした（中継が異なる分割の最良は −0.02%）。
+    v6.4 では BABY バリアント同士の分割が、交換2を合算した後も +0.70%
+    （72/28）勝ち、プランが出ます。内訳を検証したところ、勝ち分は交換2の
+    二重見積もりではなく、交換1の第1ホップ（QOM→FISH 直接 と
+    QOM→42→FISH）の分散によるもので、交換1の共有区間まで合算した
+    反実仮想でも +0.05〜0.12% 勝ちます（同一チェーン分割や中継QOM の
+    R1/R2 分割と同じ仕組み）。旧来の「幻の勝ち」という解釈は実測で
+    覆ったため、正直な実測として記録します。
 - 実行はパートごとのガイド式フローです（状態は localStorage に保存・再開可）:
   フェーズ1 = パートごとの交換1（保存パスを再見積もりして実行、受け取り量は
   残高差分で記録）→ フェーズ2 = パートごとのブリッジ → フェーズ3 = 中継
@@ -209,8 +229,9 @@ QL1 と 42 Chain の間の価格差を、2つの形で表面化します。
   - 直接（A → B）
   - 1つ経由（A → X → B）: X はチェーンの基準トークン全部
   - 2つ経由（A → X → Y → B）: 基準トークンの全ペア
-  - **分割**: 上位3ルートへの配分（2ルートは 90/10〜50/50、3ルートは 50/30/20 など）を
-    部分金額で実際に見積もり、単一ベストより多ければ「分割プラン（おすすめ）」として提示
+  - **分割**: 上位3ルートへの配分（ペアは1%刻み全探索、3ルートは代表配分）を
+    部分金額で実際に見積もり、さらに1%刻みの山登りで微調整（v6.2）。
+    単一ベストより多ければ「分割プラン（おすすめ）」として提示
 - 各プランには、直接ルートとの差（%）、交換回数、プール残高から計算した
   「値段の下がり幅（手数料＋価格への影響）」、ガス代の目安を表示します。
 - 直接プールが無いペアでも、経由ルートがあれば成立します（例: QL1 の BABY → KET は WQOM 経由）。
@@ -360,14 +381,54 @@ the hand-computed best. At 100 USDT the best split improves to about
 at 10B QOM -> QOM the best split still loses (−0.32%) and no plan is
 offered.
 
+**New in v6.2 — 1% split refinement:** after the 10% grid, pairs are
+brute-forced at 1% steps and the best plan is hill-climb refined at
+5% → 2% → 1% granularity (transfers between parts plus adding any
+not-yet-used full route; up to 5 parts; same-chain splits are refined
+the same way). This is a local optimum at 1% granularity, not a proven
+global optimum. Measured: 1,000 USDT -> QOM (QL1) improved to
+42/34/15/9 = 1,297,738,096,429 QOM (+39.19%) — close to, but honestly
+short of, the 1,300B line (missed by 2,261,903,571 QOM, 0.17%; the
+shallow QL1-side BABY pool caps it). 100 USDT improved to
+177,532,096,521 (+11.62%); 10B QOM -> QOM still showed no plan
+(best split −0.02%).
+
+**New in v6.3 — language selector, English by default:** the site root
+is now a small gate page: it sends you to the English page unless a
+saved choice says Japanese. The Japanese page lives at `ja.html`, the
+English page at `en.html`, and both headers carry an
+English / 日本語 selector that switches immediately and remembers the
+choice (localStorage `dexagg_lang`).
+
+**New in v6.4 — combined leg-2 quoting replaces the same-intermediate
+ban:** v6.1 allowed at most one part per intermediate with a real leg-2
+swap, which also blocked useful combinations (for a qCAW destination,
+the QOM intermediate's R1 and R2 routes could not be combined — the
+user's screenshot plan had no R2 part). Now, parts sharing one
+intermediate and one leg-2 path get ONE combined leg-2 quote on their
+summed bridge arrival, distributed back pro-rata — the double-count
+v6.1 feared is structurally impossible, while leg 1 stays quoted per
+part (the same-chain convention) and execution stays per-part.
+Measured: 1,000 USDT -> qCAW (QL1) now plans 637,090,857,770 qCAW
+(+48.77%, R2 part included) vs the 550,960,984,867 screenshot baseline;
+1,000 USDT -> QOM reaches 1,346,962,652,325 (+44.46%), past the 1,300B
+line; 100 USDT -> QOM reaches 183,456,862,117 (+15.33%). One honest
+change: at 10B QOM -> QOM a BABY-variant split now wins slightly
+(+0.70%) even with leg 2 combined, so a plan IS offered — verification
+showed the gain is leg-1 first-hop diversification (QOM→FISH direct vs
+QOM→42→FISH; +0.05–0.12% even when the shared leg-1 suffix is also
+combined), not the leg-2 double-count, so the old "phantom win"
+reading did not survive measurement.
+
 Honest limits: executing a split in one transaction requires a dedicated aggregator
 contract. The contract (**SplitSwap**, in `contracts/`) is written and compiled but **not
 deployed yet** — on mainnet, splits are quote-only; on the testnet, deployment is blocked
 only by the lack of TEST42 for gas (no public faucet was found). The testnet router
 address in public records was corrupted (41 hex digits); the address used here was
 recovered by verifying every single-character deletion live on-chain. The testnet token
-list is built from the testnet factory's real pairs. English UI:
-https://ql1-infinite42-guppy-histoire.github.io/dex-aggregator/en.html
+list is built from the testnet factory's real pairs. Site root
+(English by default; Japanese at /ja.html):
+https://ql1-infinite42-guppy-histoire.github.io/dex-aggregator/
 
 ## 開発
 
@@ -378,7 +439,7 @@ node probe/probe.cjs               # ライブ見積もり・分割評価・call
 node probe/crosschain.cjs          # クロスチェーン見積もり（2方向）・ブリッジcalldata・delivered再確認
 node probe/arb.cjs                 # 価格差: 具体例 (42->QOM)・直接ブリッジ比較・ボード全行スナップショット
 node probe/fullroutes.cjs          # v5全体ルート: 1000 USDT->QL1 QOM の4例照合・全中継カバー・非ベストルートのcalldata照合
-node probe/splitcross.cjs          # v6/v6.1クロス分割: 100 USDT の勝ちケース・10B QOM の対照 (単一勝利)・1,000 USDT のケースC (R2パート入り +38.5%)・パートcalldata照合
+node probe/splitcross.cjs          # v6〜v6.4クロス分割: 100 USDT の勝ちケース・10B QOM の対照 (v6.4でバリアント分割が小幅勝利に転じた所見)・1,000 USDT のケースC (1,300B 目標)・qCAW のケースD (R2パート入り)・パートcalldata照合
 node tools/harness.cjs             # 出荷コードを DOM スタブ上で動かす検証（JP/EN/テストネット/クロスチェーン）
 node tools/enumerate_testnet.cjs   # テストネット factory の全ペア列挙
 node tools/bridge/sample_counts.cjs    # ブリッジ各ルーターの実txメソッド集計
@@ -387,6 +448,50 @@ node tools/bridge/sample_delivery.cjs  # 実送信の messageId → 届け先 ma
 
 ## 更新履歴
 
+- **v6.4（2026-11-06）**: 同一中継の扱いを「禁止」から「合算見積もり」へ。
+  ユーザー指摘（宛先 qCAW の分割に USDT→FISH→QOM のルートが入らない）の
+  原因だった v6.1 の構成ルール（交換2が実在する中継は1配分1パートまで）を
+  廃し、同一中継・同一 leg2Path のパート群は交換2をブリッジ到着額の合計で
+  1回だけ見積もり、到着額に比例配分するモデルに置き換え（端数は最大
+  パートへ）。実行はパート個別のまま（見積もりモデルだけの変更）で、
+  1%微調整（v6.2）の評価にも同じ合算を適用。実測: 1,000 USDT→qCAW は
+  R2 パート（27%）入り5パート = 637,090,857,770 qCAW（+48.77%、実機
+  スクショの旧プラン 550,960,984,867 からも +15.6%）。1,000 USDT→QOM は
+  1,346,962,652,325（+44.46%）で 1,300B を超え、100 USDT→QOM も
+  183,456,862,117（+15.33%）に改善。**正直な変更点**: 10B QOM→QOM では
+  BABY バリアント分割が合算後も +0.70% 勝ち、プランが出るようになった。
+  内訳を検証した結果、勝ち分は交換2の二重見積もりではなく交換1の
+  第1ホップ（QOM→FISH / QOM→42→FISH）の分散で、交換1の共有区間まで
+  合算した反実仮想でも +0.05〜0.12% 勝つため、旧来の「幻の勝ち」という
+  解釈は実測で覆った（経緯は「クロスチェーン分割」の実測対照に詳述）。
+  合算の単体テスト（グループ化・比例配分・端数処理）とケースD の
+  ライブ検証をハーネスに追加。
+- **v6.3（2026-11-06）**: 言語まわりを変更。ルート（index.html）を軽い
+  振り分けページにし、保存済み言語（localStorage `dexagg_lang`）が
+  「ja」のときだけ日本語ページ、それ以外は **英語がデフォルト** で
+  表示されるようにした。日本語ページは `ja.html` として新設（英語は
+  従来どおり `en.html`）。両ページのヘッダーに言語セレクタ
+  （English / 日本語）を置き、選ぶと即移動＋選択を保存する。
+  noscript でも両ページへのリンクから進める。ハーネスで振り分け・
+  セレクタの保存・言語判定を検証。
+- **v6.2（2026-11-06）**: 分割探索を1%刻みに精密化（ユーザー要望
+  「1%刻みで最善の結果を出して」）。クロスチェーン分割は2段階探索に:
+  ステージ1 = 従来の10%グリッド（5パートまで拡張）＋ペアの1%刻み
+  全探索（プール上位5件間）、ステージ2 = 最良配分からの山登り微調整
+  （ステップ 5% → 2% → 1%。パート間の移し替え＋未使用候補の1%追加 —
+  追加候補は候補プールでなく全体ルート一覧の全件から。パート数最大5）。
+  1%ムーブで改善が無くなれば終了する局所最適であり、大域最適の証明では
+  ない。同一チェーン内の分割も同じ微調整を適用（実測: USDT→FISH 500 で
+  53/27/20 の非ラウンド配分）。実測（ケースC = 1,000 USDT→QL1 QOM）:
+  42/34/15/9 = 1,297,738,096,429（+39.19%）まで改善したが、目標の
+  **1,300B には 2,261,903,571 QOM（0.17%）届かなかった**。上限は
+  BABY の QL1 側プール（BABY→WQOM）の浅さ: BABY 15%→20% の追加
+  50 USDT が生む増分は約42B QOM（≒0.84B/USDT）まで落ち、QOM 系ルートの
+  約1.27B/USDT を下回るため、それ以上寄せても合計は伸びない。
+  ケースA（100 USDT）は 177,532,096,521（+11.62%、5パート。O が追加
+  ムーブで参入）。ケースB（10B QOM）は最良の分割でも −0.02% で、
+  従来どおりプランなし。性能: 評価は (ルート,金額) キャッシュ＋
+  バッチ RPC で、ケースC のパート見積もり実数 692 件・約8.4秒（検証環境）。
 - **v6.1（2026-11-06）**: クロスチェーン分割の探索範囲を拡張。候補を
   「中継ごとの最良だけ」から「全体ルートの最終額順 上位6件＋中継ごとの
   最良（最大8件）」に広げ、同じ中継のパスバリアント（例: 中継QOM の

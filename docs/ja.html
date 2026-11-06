@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DEXアグリゲーター（42 Chain / QL1 / 42 Testnet）</title>
+<meta name="description" content="42 Chain（Infinite）と QL1 と 42テストネットで、直接・経由・分割の全部のルートを比べて、いちばん多く受け取れるプランで交換できるサイト。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>DEXアグリゲーター（42 Chain / QL1 / Testnet）</h1>
+  <p class="sub">いちばん多く受け取れるルートを、全部のプールから探します。<span class="lang-switch"><label>言語 / Language <select id="langSel"><option value="en">English</option><option value="ja" selected>日本語</option></select></label></span></p>
+  <p class="sub small">「ルート」＝交換の通り道です。たとえば USDT → 42 を直接交換する道と、USDT → FISH → 42 のように経由する道があり、金額によって多い方が変わります。さらに、金額を複数のルートに分ける「分割」も含めて全部見積もりして並べます（1inchと同じ考え方）。</p>
+</header>
+
+<div id="testnetBanner" class="testnet-banner" style="display:none">⚠ テストネット（TEST42）— 本物のお金ではありません</div>
+
+<section class="panel">
+  <h2>チェーン</h2>
+  <div class="chain-row">
+    <button id="chainInf" type="button" class="chain-btn active">42 Chain</button>
+    <button id="chainQl1" type="button" class="chain-btn">QL1</button>
+    <button id="chainTest" type="button" class="chain-btn">42 Testnet</button>
+  </div>
+  <p id="chainNote" class="count"></p>
+  <div class="chain-row" style="margin-top:8px">
+    <button id="modeSame" type="button" class="chain-btn active">同一チェーン内</button>
+    <button id="modeCross" type="button" class="chain-btn">クロスチェーン</button>
+  </div>
+  <p id="modeNote" class="count">クロスチェーンは QL1 ⇔ 42 Chain の間です（テストネットでは使えません）。</p>
+  <div class="connect-row">
+    <button id="connectBtn" type="button">ウォレットを接続（MetaMask）</button>
+    <span id="accountLine" class="count">未接続（見積もりだけなら接続なしで使えます）</span>
+  </div>
+  <p id="status" class="status"></p>
+</section>
+
+<section class="panel swap-panel" id="swapPanel">
+  <h2>交換する</h2>
+
+  <div class="pay-box">
+    <div class="pay-label">出す（You pay）</div>
+    <div class="pay-row">
+      <select id="fromToken" aria-label="出すトークン"></select>
+      <input id="amountIn" type="text" inputmode="decimal" autocomplete="off" placeholder="0.0" aria-label="金額">
+    </div>
+    <p id="fromBalance" class="count"></p>
+    <div class="chips">
+      <button type="button" class="chip" data-pct="25">25%</button>
+      <button type="button" class="chip" data-pct="50">50%</button>
+      <button type="button" class="chip" data-pct="75">75%</button>
+      <button type="button" class="chip" data-pct="MAX">MAX</button>
+    </div>
+    <p class="count">MAX はネイティブ通貨（42 / QOM / TEST42）の場合、ガス代用に 0.01 だけ残して計算します。トークンの場合は全額です。</p>
+  </div>
+
+  <div class="flip-row"><button id="flipBtn" type="button" aria-label="上下入れ替え">↓↑ 入れ替える</button></div>
+
+  <div class="pay-box receive">
+    <div class="pay-label">受け取る（You receive・見積もり）</div>
+    <div class="pay-row">
+      <select id="toToken" aria-label="受け取るトークン"></select>
+      <div id="receiveOut" class="receive-out">0.0</div>
+    </div>
+    <p id="toBalance" class="count"></p>
+    <p class="rate-row"><span id="rateLine"></span> <button id="rateInvertBtn" type="button" class="mini-btn" title="レート表示を反転">⇄ 反転</button></p>
+    <p id="gasLine" class="count"></p>
+  </div>
+
+  <div class="slip">
+    <div class="slip-label">スリッページ（値段がズレても許せる幅）</div>
+    <p class="count">見積もりから実際の値段がこの幅より悪くなったら、取引は自動で失敗して資産を守ります。</p>
+    <div class="slip-row">
+      <button type="button" class="slip-btn" data-val="0.5">0.5%</button>
+      <button type="button" class="slip-btn active" data-val="1">1%</button>
+      <button type="button" class="slip-btn" data-val="3">3%</button>
+      <input id="slipCustom" type="text" inputmode="decimal" placeholder="自分で入力（%）">
+    </div>
+  </div>
+
+  <button id="quoteBtn" type="button" class="big">ルートを比べる</button>
+  <div id="planArea"></div>
+  <div id="routeList" class="route-list"></div>
+  <p id="splitNote" class="split-note"></p>
+  <p id="minLine" class="count"></p>
+  <button id="swapBtn" type="button" class="big swap" disabled>このルートで交換する</button>
+  <p id="txResult" class="status"></p>
+  <p class="count">交換は有効期限20分で送ります。初めて使うトークンでは、最初に「使う許可」の確認がウォレットに出ます。ガスの金額は目安です。</p>
+</section>
+
+<section class="panel" id="crossPanel" style="display:none">
+  <h2>クロスチェーン交換（QL1 ⇔ 42 Chain）</h2>
+  <p class="count">別のチェーンのトークンに交換します。進み方は「交換 → ブリッジで送る → 到着を待つ → 最後の交換」の4ステップで、各ステップで自分のウォレットで確認（署名）します。自動で送ることはしません。進み具合はこのブラウザに保存されるので、画面を閉じても続きから再開できます。</p>
+  <div class="fld">
+    <span>送る元チェーン → 届くチェーン</span>
+    <div class="chain-row" style="margin-top:6px">
+      <button id="xSrcQl1" type="button" class="chain-btn active">QL1 から</button>
+      <button id="xSrcInf" type="button" class="chain-btn">42 Chain から</button>
+      <span class="count">→ <b id="xDstLabel">42 Chain</b></span>
+    </div>
+  </div>
+  <label class="fld">出すトークン（送る元チェーンのもの）
+    <select id="xFromToken" aria-label="出すトークン（クロスチェーン）"></select>
+  </label>
+  <p id="xFromBalance" class="count"></p>
+  <label class="fld">金額
+    <input id="xAmount" type="text" inputmode="decimal" autocomplete="off" placeholder="0.0" aria-label="金額（クロスチェーン）">
+  </label>
+  <label class="fld">受け取るトークン（届くチェーンのもの）
+    <select id="xToToken" aria-label="受け取るトークン（クロスチェーン）"></select>
+  </label>
+  <button id="xQuoteBtn" type="button" class="big">クロスチェーンで比べる</button>
+  <p id="xStatus" class="status"></p>
+  <div id="xCandidates" class="route-list"></div>
+  <div id="xFlow"></div>
+  <button id="xAbandon" type="button" style="display:none;margin-top:10px">やめる（進み具合を消す）</button>
+  <p class="count">中継に使えるのはブリッジの実績を確認できたトークンだけです（QOM / BABY / CAW / FATHER / HAWK / KET / O / OSAK。ただし 42 Chain → QL1 の OSAK は送信実績が確認できていないため使えません）。<b>ブリッジがつながっているトークンは、どれでも中継に使えます</b>（仕組みはトークンごとに違いません）。中継ごとに交換の通り道の組み合わせ（全体ルート）を全部並べるので、遠回りなルートがなぜ多いのか・単純なルートだとどれだけ減るのかも、そのまま見て選べます。全体ルート同士で金額を分ける「分割」も見積もりし、単一ルートより多いときだけ分割プランのカードを出します（ブリッジはパートごとに別送信になるので、42 Chain から送る場合のメッセージ代はパートの数だけかかります）。ブリッジ手数料は0です。42 Chain から送るときはメッセージ代（約2.94 [42]、送信時に再取得）が別にかかります。QL1 から送るときは実測で0です。到着は数分かかることがあります（実測では約5分の例あり）。</p>
+</section>
+
+<section class="panel" id="arbPanel">
+  <h2>価格差（裁定）</h2>
+  <p class="count">QL1 と 42 Chain の間で同じトークンの値段がズレていると、「安い方で買って、ブリッジして、高い方で売る」ことで差が取れます（裁定。取引されると価格差は縮んでいきます）。このボードは、基準通貨 QOM で始めて QOM で終わるルートを、全トークン×両方向で<b>実際のルート見積もり</b>（各プールの <code>getAmountsOut</code>）で計算します。目安価格だけの比較は、薄いプールでは嘘になるため使いません。</p>
+  <p id="arbTestnetNote" class="count" style="display:none">テストネットでは使えません（QL1のテストネットブリッジは確認できていません）。本番チェーンを選んでください。</p>
+  <label class="fld">金額（QOM）
+    <input id="arbAmount" type="text" inputmode="decimal" autocomplete="off" value="100000000000" aria-label="金額（QOM）">
+  </label>
+  <div class="chips">
+    <button type="button" class="chip arb-chip" data-amt="100000000">1億 QOM</button>
+    <button type="button" class="chip arb-chip" data-amt="1000000000">10億 QOM</button>
+    <button type="button" class="chip arb-chip" data-amt="100000000000">1000億 QOM</button>
+  </div>
+  <p class="count">金額の目安について：42 Chain 発のブリッジにはメッセージ代（約2.94 [42]、QOM換算で約34.5億 QOM）が固定でかかるため、10億 QOM 以下では 42 Chain 発のルートは手数料だけでマイナスになります。初期値は手数料が約3.5%に収まる 1000億 QOM です。逆に大きすぎる金額では、プールが薄くて値段が大きくズレてマイナスになります。小さい金額では QL1 発（手数料0）の小口の価格差が見えることがあります。</p>
+  <button id="arbScanBtn" type="button" class="big">価格差を調べる</button>
+  <p id="arbStatus" class="status"></p>
+  <div id="arbBoard" class="route-list"></div>
+  <ul class="notes" style="margin-top:10px">
+    <li>見積もりは今のプールの値段です。ブリッジ中（数分）に値段が動くと、結果は変わります。</li>
+    <li>価格差は、誰かが取引すると縮んで消えていきます（それが裁定の仕組みです）。表示された差が、実行のときにも残っている保証はありません。</li>
+    <li>往復は片道よりリスクが大きいです（ブリッジが2回で、値段が動く時間が長くなります）。</li>
+    <li>差し引きにはブリッジのメッセージ代（QOM換算）を含んでいますが、DEX のガス代は概算のため含んでいません。</li>
+    <li>買える量がブリッジの最小量（1トークン）に届かないルートは「見積もり不可」と表示します（例：小さい金額での KET）。</li>
+  </ul>
+</section>
+
+<section class="panel" id="caPanel">
+  <h2>CAを貼ってトークンを追加</h2>
+  <p class="count">一覧に無いトークンは、コントラクトアドレス（CA）を貼るとチェーンから読み取って追加できます。追加したトークンはこのブラウザに保存されます。</p>
+  <div class="ca-row">
+    <input id="caInput" type="text" placeholder="0x…（今選んでいるチェーンのトークン）" autocomplete="off" spellcheck="false">
+    <button id="caAddBtn" type="button">追加</button>
+  </div>
+  <p id="caMsg" class="status"></p>
+</section>
+
+<section class="panel">
+  <h2>仕組みと正直な限界</h2>
+  <ul class="notes">
+    <li>見積もりは DEX ルーターの <code>getAmountsOut</code> を、直接・1つ経由・2つ経由の全ルートで実際に叩いた結果です。推測の価格ではありません。</li>
+    <li>上位ルートへの分割（90/10、80/20、…、50/50 や3ルート分割）も同じ方法で見積もりし、単一ルートより多いときは「分割プラン（おすすめ）」として出します。</li>
+    <li><b>分割の実行には専用のアグリゲーター・コントラクトが必要です。</b>このサイトのリポジトリにはそのコントラクト（SplitSwap）を用意してありますが、42 Chain / QL1 本番にはまだデプロイされていません。そのため本番チェーンでは分割は<b>見積もりのみ</b>で、実行は単一ルートです。テストネット用も未デプロイです（デプロイに使う TEST42 の公開ファウセットが見つからなかったため）。デプロイされれば、このサイトの分割ボタンがそのまま使えるようになります。</li>
+    <li>テストネットの DEX ルーターは、公開記録のアドレスが1文字多く壊れていたため、候補を全部ライブで検証して復旧したアドレスを使っています。トークン一覧もテストネットの実ペアから作っています。</li>
+    <li>「値段の下がり幅」は、プールの残高から計算した手数料なしの目安と、実際の見積もりとの差です（手数料＋金額の大きさによる影響）。ガスの金額も目安です。</li>
+    <li>プールが小さいトークンでは、見積もりと実際の結果がズレやすくなります。少しの金額で試してから大きな金額を扱ってください。</li>
+    <li>このサイトは手数料を取りません。交換は各チェーンの DEX（42 Chain: Don't Panic／QL1: QomSwap）のルーターと直接やり取りします。</li>
+    <li><b>全体ルート表示（v5）</b>：クロスチェーンの結果は「交換1 → ブリッジ → 交換2」を1つに束ねた全体ルート単位で並べます。中継トークンごとに交換の通り道の上位バリアントを組み合わせるので、単純なルート（通るプールが少ない）も、遠回りでも受け取りが多いルートも、両方見て選べます。「このルートではじめる」を押すと、その全体ルートの通り道がそのまま保存され、ステップ1とステップ4は保存された通り道で実行します（実行時にその通り道で見積もり直し、使えなくなっていたら別のルートへは切り替えずに止まります）。</li>
+    <li><b>クロスチェーン分割（v6〜v6.4）</b>：全体ルート同士で金額を分ける分割も、各パートを「そのルート・その金額」で実際に見積もり直して評価します。候補は最終見積もり順の上位ルートで、同じ中継の異なる通り道（例：USDT → FISH → QOM）も別々に数えます。配分はまず10%刻みで粗く探し（2〜5パート）、ペアは1%刻みで全て試し、最後に1%刻みの微調整で詰めます（微調整では全体ルート一覧のどれでも新しく加えて試します）。同じ中継・同じ2回目の交換になるパート同士は、2回目の交換を「届いた合計額で1回だけ」見積もって分け合うので、同じプールを2回使う分の上振れは出ません（v6.4）。単一ルートより多いときだけ「分割プラン」のカードを出し、「この分割プランではじめる」でパートごとのガイド（交換→ブリッジ→到着待ち→交換をパート単位で進める）が始まります。ブリッジはパートごとに別送信で、42 Chain 発のメッセージ代はパート数分かかります（合計をカードに表示します）。分割が単一に負けるときはプランを出さず、「単一ルートがいちばん」と正直に表示します。実測の対照例：1,000 USDT → QL1 の QOM では分割が単一ベストより +44.5% 多くなり、1,000 USDT → QL1 の qCAW でも中継QOM の2つの通り道を両方使う分割が +48.8% でした。</li>
+    <li><b>価格差の表示（v4）</b>：クロスチェーン見積もりでは「素直なルート」（中継 QOM、または出すトークンそのものをブリッジできる場合はそれ）を基準にして、各候補に基準との差（%と量）を表示します。いちばん多い候補が基準より 0.5% 超多いときは「価格差で +○%」のバッジが付きます（例：実測では 42 Chain の 100 [42] → QL1 QOM で、中継 BABY が基準の QOM より +6.33% 多くなりました。ただし 500 [42] では BABY のプールが吸収しきれず −25.8% と逆転します。金額で変わるので、必ず自分の金額で見積もり直してください）。</li>
+    <li><b>クロスチェーン（v3）</b>：ブリッジは Hyperlane（Zaphod Bridge）を使います。有効にしている向きとトークンは、実在の送信トランザクションからメッセージIDを取り、届け先チェーンのメールボックスで「配達済み」を確認できたものだけです（2026-11-06 サンプリング: QL1→42 Chain は8トークン×2件 = 16/16、42 Chain→QL1 は OSAK を除く7トークンで 13/13 が配達済み。OSAK の 42 Chain 側ルーターには送信実績自体が無いため、この向きだけ無効にしています）。ブリッジ公式サイトの統計で「QL1発の配達0件」と出るのは、その統計の索引が QL1 を拾えていないためで、チェーン上では配達が確認できています。最後の交換は到着時点の値段になるため、最終見積もりは目安です。</li>
+  </ul>
+</section>
+
+<footer>
+  <p>v6.4 ／ データ取得元：42 Chain RPC / QL1 RPC / 42 Testnet RPC（プールを直接読取）。ソースコードは MIT ライセンスで公開しています。</p>
+</footer>
+<script src="app.js"></script>
+</body>
+</html>

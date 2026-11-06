@@ -4,11 +4,13 @@
      親実測: 単一ベスト (中継QOM) 158,939,386,644.5 / 中継BABY 158,726,284,663.2 /
      50:50 分割 = 173,506,993,671.8 (+9.17%)。evaluateCrossSplit がそれ以上の
      分割プランを「勝ち」として出すことを確認する (v6: 40/40/20 = +10.70%)。
-   - ケースB (対照): Infinite QOM 10B -> QL1 QOM。親実測では単独ベスト
-     (BABY経由 11.955B, +19.5%) が全ての分割 (最良でも -0.32%) に負けない。
-     探索が正直に「分割プランなし (単一が最良)」と結論することを確認する。
-     v6.1 の同一中継ルール (交換2が実在する中継は複数パートにしない) により、
-     BABY バリアント同士の見かけ +0.33% は探索対象から外れている。
+   - ケースB (対照): Infinite QOM 10B -> QL1 QOM。v6.1/v6.2 では単独ベスト
+     (BABY経由 11.955B, +19.5%) が勝ち、分割プランは出なかった (同一中継
+     バリアントは v6.1 ルールで探索対象外)。v6.4 の合算モデルでは BABY
+     バリアント分割が leg2 合算後も小幅 (+0.70%) に勝ち、プランが立つ。
+     内訳は leg1 第1ホップ (QOM→FISH 直接 / QOM→42→FISH) の分散であり、
+     leg1 共有サフィックスまで合算した反実仮想でも +0.05〜0.12% 勝つため、
+     leg2 二重見積もりの幻ではない — v6.4 レポートで親へ判断を仰いだ事項。
    - ケースC (v6.1): 1,000 USDT -> QOM (QL1)。v6 では中継ごとの最良だけが
      候補で、プラン (70/20/10) = 1,139.34B に leg1 USDT→FISH→QOM のパートが
      入らなかった。親実測: R1 50/R2 50 = 1,171.64B、R1 40/R2 30/BABY 20/
@@ -87,8 +89,8 @@ const refDiff = (raw, refFloat) => ((F18(raw) / refFloat - 1) * 100).toFixed(2) 
   const xsB = await app.evaluateCrossSplit("infinite", "ql1", amtB, candsB);
   console.log("単一ベスト:", enB[0] && enB[0].pair.sym, "=>", enB[0] && formatAmount(enB[0].finalOut, 18, 2), "QOM");
   console.log("最良の分割:", xsB.best && formatAmount(xsB.best.totalOut, 18, 2), "QOM (単一ベスト比:", xsB.best ? pctVs(xsB.best.totalOut, enB[0].finalOut).toFixed(2) + "%" : "—", ")");
-  if (xsB.best) for (const p of xsB.best.parts) console.log(`   ${p.pct}% [中継 ${p.cand.pair.sym}] => ${formatAmount(p.finalOut, 18, 2)} QOM`);
-  console.log("★ 正直チェック: 分割プランを出さない (単一ベストが最良) =", xsB.plan === null);
+  if (xsB.best) for (const p of xsB.best.parts) console.log(`   ${p.pct}% [中継 ${p.cand.pair.sym}] ${fullLabel(p.cand)} => ${formatAmount(p.finalOut, 18, 2)} QOM`);
+  console.log("★ v6.4 所見: v6.1/v6.2 ではプラン非表示だったが、合算モデルでは BABY バリアント分割 (leg1 第1ホップ QOM→FISH と QOM→42→FISH の分散) が小幅に勝ち、プランが立つ。leg1 共有サフィックスまで合算した反実仮想でも +0.05〜0.12% 勝つため、leg2 二重見積もり由来の幻ではない (親へ報告済みの判断待ち事項)。plan =", !!xsB.plan);
 
   /* ================= ケースC (v6.1): 1,000 USDT -> QOM (QL1) ================= */
   const amtC = parseAmount("1000", fromA.decimals);
@@ -114,6 +116,29 @@ const refDiff = (raw, refFloat) => ((F18(raw) / refFloat - 1) * 100).toFixed(2) 
   }
   const planC = xsC.plan;
   console.log("★ R2 パートを含む:", !!(planC && planC.parts.some((p) => isR2(p.cand))), "| 合計 >= 1,270B QOM:", !!(planC && planC.totalOut >= 1270n * 10n ** 27n));
+
+  /* ================= ケースD (v6.4): 1,000 USDT -> qCAW (QL1) =================
+     宛先が QOM 以外だと、v6.1 の splitAllocAllowed が中継 QOM の R1/R2 の
+     組み合わせを禁止していた (ユーザーの実機スクショ: プラン 60/20/10/10 =
+     550,960,984,867 qCAW, +28.67%, R2 パートなし)。v6.4 の合算モデルでは
+     R2 系パートが入り、交換2 は合算額で1回だけ見積もられる。 */
+  const toD = app.tokenById("ql1", "qcaw");
+  console.log("\n=== ケースD (v6.4): 1,000 USDT (42 Chain) -> qCAW (QL1) ===");
+  const candsD = await app.quoteCrossPlan("infinite", fromA, "ql1", toD, amtC);
+  const enD = candsD.filter((c) => c.enabled);
+  const bestSingleD = enD[0];
+  console.log("単一ベスト:", fullLabel(bestSingleD), "=>", formatAmount(bestSingleD.finalOut, 18, 2), "qCAW");
+  const xsD = await app.evaluateCrossSplit("infinite", "ql1", amtC, candsD);
+  console.log("分割探索: 評価した配分数:", xsD.evaluated, "| 最良の分割:", xsD.best && formatAmount(xsD.best.totalOut, 18, 2), "qCAW | 微調整:", JSON.stringify(xsD.refineStats));
+  console.log("分割プラン (勝ちとして出るか):", !!xsD.plan);
+  if (xsD.best) {
+    for (const p of xsD.best.parts) console.log(`   ${p.pct}% [中継 ${p.cand.pair.sym}] ${fullLabel(p.cand)} => ${formatAmount(p.finalOut, 18, 2)} qCAW`);
+    console.log("   単一ベスト比:", pctVs(xsD.best.totalOut, bestSingleD.finalOut).toFixed(2) + "%", "| パート金額の合計 == 全体額:", xsD.best.parts.reduce((s, p) => s + p.amountIn, 0n) === amtC);
+  }
+  const FISH_A2 = app.tokenById("infinite", "fish").address.toLowerCase();
+  const isR2D = (p) => p.cand.pair.sym === "QOM" && p.cand.leg1Path && p.cand.leg1Path.length === 3 && p.cand.leg1Path[1].toLowerCase() === FISH_A2;
+  console.log("★ R2 系パート (中継QOM・leg1 USDT→FISH→QOM) を含む:", !!(xsD.plan && xsD.plan.parts.some(isR2D)),
+    "| v6.1 実機ベースライン 550,960,984,867 qCAW との差:", xsD.best ? refDiff(xsD.best.totalOut, 550960984867.0) : "—");
 
   /* ================= calldata 照合 (ケースAの分割パート) ================= */
   console.log("\n--- calldata 照合: 分割パートの交換1 (パート金額で組む) ---");

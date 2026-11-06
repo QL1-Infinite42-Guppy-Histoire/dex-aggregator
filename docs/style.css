@@ -53,6 +53,7 @@ footer { max-width: 760px; margin: 0 auto; padding: 4px 16px 28px; color: #8d99a
 /* ---- v2 additions ---- */
 .lang-switch { margin-left: 10px; }
 .lang-switch a { color: #8fd0ff; font-size: 13px; }
+.lang-switch select { margin-left: 4px; background: #10182b; color: #e8eefc; border: 1px solid #2b3857; border-radius: 6px; padding: 2px 6px; font-size: 13px; }
 .testnet-banner { max-width: 760px; width: calc(100% - 24px); margin: 12px auto 0; background: #6b5410; border: 1px solid #c9a227; color: #ffe9a8; border-radius: 10px; padding: 10px 14px; font-size: 14px; font-weight: 700; text-align: center; }
 .pay-box { background: #10182b; border: 1px solid #2b3857; border-radius: 12px; padding: 12px; margin-top: 10px; }
 .pay-box.receive { background: #12241f; border-color: #24503f; }

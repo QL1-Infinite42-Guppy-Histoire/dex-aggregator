@@ -1055,16 +1055,17 @@ async function quoteCrossPlan(srcKey, fromTok, dstKey, toTok, amountIn) {
      全体ルート一覧の全件から。パート数は最大5)。1% ムーブで改善が
      無くなったら終了する局所最適であり、数学的な大域最適の証明ではない。
    - 全ステージで (ルート, 金額) 単位の見積もりキャッシュを共有する。
-   - 同じ中継への複数パートは、その中継の交換2が無い (中継 = 宛先トークン
-     そのもの) ときだけ許可する。交換2が実在する中継を2パートに分けると、
-     宛先側では同一プールへの交換が2回続くことになり、2件目が1件目で動いた
-     プールに当たる分、独立見積もりの合計が実額を上振れしてしまうため
-     (実測: 10B QOM の BABY バリアント同士の 50:50 が単独ベストを +0.33%
-     上回って見えるが、これは上振れ側の数字)。中継 = 宛先の場合は宛先側に
-     プールが無く、差は送信側の経路だけなので、同一チェーン分割と同じ扱い。
-   パート金額は pct の床割りで統一し (同じ (ルート, 金額) の見積もりは
-   キャッシュ、RPC はレッグごとに一括)、勝った配分だけ最後に端数を最大
-   パートへ寄せて再見積もりし、パート合計 = 入力額ちょうどにする。
+   v6.4 で同一中継の扱いを変更 (ユーザー指摘: 宛先が QOM 以外だと中継 QOM
+   の R1/R2 が組み合わせられない): v6.1 の「交換2が実在する中継は1パート
+   まで」という禁止を廃し、同一中継・同一 leg2Path のパート群は交換2を
+   合算額で1回だけ見積もり、到着額に比例配分する合算モデルに置き換えた
+   (combineLeg2Groups / distributeCombinedOut)。v6.1 が潰したかった
+   「同じ宛先プールを2回独立見積もりする幻の勝ち」(10B QOM の BABY
+   バリアント同士 50:50 の +0.33%) は、合算により構造的に消える。
+   実行フェーズは従来どおりパート個別で、見積もりモデルだけの変更。
+   パート金額は pct の床割りで統一し (見積もりはキャッシュ、RPC は
+   レッグごとに一括)、勝った配分だけ最後に端数を最大パートへ寄せて
+   同じモデルで再計算し、パート合計 = 入力額ちょうどにする。
    plan は「最良の分割が単一ベスト全体ルートに勝ったとき」だけ立つ (正直ルール)。 */
 function crossSplitPool(enabled) {
   const pool = enabled.slice(0, 6);
@@ -1082,19 +1083,42 @@ const X_SPLIT_COMPS = { 2: [], 3: [], 4: [], 5: [] };
   };
   gen(2, 100, []); gen(3, 100, []); gen(4, 100, []); gen(5, 100, []);
 })();
-/* same-intermediate rule (see header): multiple parts on one intermediate are
-   allowed only when that intermediate's leg 2 is the identity (the bridged
-   token IS the destination token, so there is no destination-side pool). */
-function splitAllocAllowed(cands) {
-  const bySym = new Map();
-  for (const c of cands) {
-    if (!bySym.has(c.pair.sym)) bySym.set(c.pair.sym, []);
-    bySym.get(c.pair.sym).push(c);
+/* ---------- v6.4: combined leg-2 quoting for shared intermediates ----------
+   v6.1 では「交換2が実在する中継は1プランに1パートまで」と禁止していた
+   (同じ宛先プールを2回独立に見積もると合計が上振れるため)。v6.4 では禁止
+   ではなく合算見積もりに置き換える: 同一中継・同一 leg2Path のパート群は、
+   交換2 を「ブリッジ到着額の合計」で1回だけ見積もり、出力を到着額に比例
+   配分する (端数はグループ内最大パートへ)。これで上振れは構造的に消え、
+   宛先が QOM 以外でも中継 QOM の R1/R2 のような組み合わせが使える。
+   交換1 は従来どおりパートごとの独立見積もり (同一チェーン分割と同じ)。 */
+function leg2GroupKey(cand) {
+  return cand.leg2Path ? cand.pair.sym + "|" + cand.leg2Path.map((a) => String(a).toLowerCase()).join(",") : null;
+}
+/* parts: [{cand, leg1Out}] -> leg2 を共有するグループ [{key, cand, totalIn, idxs}] */
+function combineLeg2Groups(parts) {
+  const groups = new Map();
+  parts.forEach((p, i) => {
+    const key = leg2GroupKey(p.cand);
+    if (!key) return;
+    if (!groups.has(key)) groups.set(key, { key, cand: p.cand, totalIn: 0n, idxs: [] });
+    const g = groups.get(key);
+    g.totalIn += p.leg1Out;
+    g.idxs.push(i);
+  });
+  return [...groups.values()];
+}
+/* 合算見積もりの出力を到着額 (leg1Out) の比率で配分する。端数は最大パートへ。 */
+function distributeCombinedOut(totalOut, leg1Outs) {
+  const totalIn = leg1Outs.reduce((s, x) => s + x, 0n);
+  if (totalIn <= 0n) return leg1Outs.map(() => 0n);
+  const shares = leg1Outs.map((o) => (totalOut * o) / totalIn);
+  const dust = totalOut - shares.reduce((s, x) => s + x, 0n);
+  if (dust > 0n) {
+    let mi = 0;
+    for (let i = 1; i < leg1Outs.length; i++) if (leg1Outs[i] > leg1Outs[mi]) mi = i;
+    shares[mi] += dust;
   }
-  for (const group of bySym.values()) {
-    if (group.length > 1 && group.some((c) => c.leg2Path)) return false;
-  }
-  return true;
+  return shares;
 }
 async function requoteSplitPart(srcKey, dstKey, cand, amount) {
   let o1 = null;
@@ -1112,60 +1136,68 @@ async function requoteSplitPart(srcKey, dstKey, cand, amount) {
   const v = amts2 && amts2.length ? amts2[amts2.length - 1] : null;
   return v != null && v > 0n ? { leg1Out: o1, finalOut: v } : null;
 }
-/* ---------- v6.2: cross-split part quoter ----------
-   (候補ルート, 金額) 単位でパート見積もりをキャッシュする。未見積もり分は
-   送信チェーン (交換1) → 宛先チェーン (交換2) の2ラウンドで一括取得し、
-   探索の全ステージ (10%グリッド / ペア1% / 微調整) でキャッシュを共有する。
+/* ---------- v6.2/v6.4: cross-split quoter ----------
+   交換1 は (候補ルート, 金額) 単位でキャッシュする。交換2 は v6.4 から
+   「グループキー (中継+leg2Path) × 合算到着額」単位でキャッシュする
+   (combineLeg2Groups 参照 — 同一 leg2 を共有するパートは合算で1回だけ
+   見積もり、比例配分する)。探索の全ステージでキャッシュを共有し、
    1回の rpcBatch が大きくなりすぎないよう 150 件ずつに区切る。 */
 function makeCrossSplitQuoter(srcKey, dstKey, candIdx) {
-  const cache = new Map(); // "candIdx|amount" -> {leg1Out, finalOut} | null (null = その金額では不成立)
-  const stats = { partQuotes: 0, batches: 0 };
+  const leg1Cache = new Map(); // "candIdx|amount" -> leg1Out (BigInt) | null (null = その金額では交換1不可)
+  const leg2Cache = new Map(); // "groupKey|totalIn" -> combined leg2 totalOut (BigInt) | null
+  const stats = { partQuotes: 0, leg2Quotes: 0, batches: 0 };
   const CHUNK = 150;
-  async function ensure(jobs) {
+  const leg1Key = (cand, amount) => candIdx.get(cand) + "|" + amount.toString();
+  async function ensureLeg1(jobs) {
     const missing = [];
     const seen = new Set();
     for (const j of jobs) {
       if (!j || j.amount == null || j.amount <= 0n) continue;
-      const key = candIdx.get(j.cand) + "|" + j.amount.toString();
-      if (!cache.has(key) && !seen.has(key)) { seen.add(key); missing.push({ key, cand: j.cand, amount: j.amount }); }
+      const key = leg1Key(j.cand, j.amount);
+      if (!leg1Cache.has(key) && !seen.has(key)) { seen.add(key); missing.push({ key, cand: j.cand, amount: j.amount }); }
     }
     for (let s = 0; s < missing.length; s += CHUNK) {
       const chunk = missing.slice(s, s + CHUNK);
       stats.partQuotes += chunk.length;
-      // round 1: leg-1 quotes on the source chain (identity leg 1 = direct bridge)
-      const leg1Out = new Map();
-      const srcCalls = [], srcKeys = [];
+      const calls = [], keys = [];
       for (const m of chunk) {
-        if (!m.cand.leg1Path) leg1Out.set(m.key, m.amount);
-        else { srcKeys.push(m.key); srcCalls.push([CHAINS[srcKey].router, encodeGetAmountsOut(m.amount, m.cand.leg1Path)]); }
+        if (!m.cand.leg1Path) leg1Cache.set(m.key, m.amount); // identity leg 1 = direct bridge
+        else { keys.push(m.key); calls.push([CHAINS[srcKey].router, encodeGetAmountsOut(m.amount, m.cand.leg1Path)]); }
       }
-      if (srcCalls.length) {
+      if (calls.length) {
         stats.batches++;
-        const res = await rpcBatch(CHAINS[srcKey], srcCalls);
-        srcKeys.forEach((key, k) => { const amts = decodeAmountsOut(res[k]); leg1Out.set(key, amts && amts.length ? amts[amts.length - 1] : null); });
-      }
-      // round 2: leg-2 quotes on the destination chain (bridge minimum enforced on leg-1 out)
-      const dstCalls = [], dstList = [];
-      for (const m of chunk) {
-        const o1 = leg1Out.get(m.key);
-        if (o1 == null || o1 <= 0n || o1 < (10n ** BigInt(m.cand.tSrc.decimals))) { cache.set(m.key, null); continue; }
-        if (!m.cand.leg2Path) { cache.set(m.key, { leg1Out: o1, finalOut: o1 }); continue; }
-        dstList.push({ key: m.key, leg1Out: o1 });
-        dstCalls.push([CHAINS[dstKey].router, encodeGetAmountsOut(o1, m.cand.leg2Path)]);
-      }
-      if (dstCalls.length) {
-        stats.batches++;
-        const res = await rpcBatch(CHAINS[dstKey], dstCalls);
-        dstList.forEach((d, k) => {
-          const amts = decodeAmountsOut(res[k]);
-          const v = amts && amts.length ? amts[amts.length - 1] : null;
-          cache.set(d.key, v != null && v > 0n ? { leg1Out: d.leg1Out, finalOut: v } : null);
-        });
+        const res = await rpcBatch(CHAINS[srcKey], calls);
+        keys.forEach((key, k) => { const amts = decodeAmountsOut(res[k]); leg1Cache.set(key, amts && amts.length ? amts[amts.length - 1] : null); });
       }
     }
   }
-  function get(cand, amount) { return cache.get(candIdx.get(cand) + "|" + amount.toString()) || null; }
-  return { ensure, get, stats };
+  async function ensureLeg2(jobs) {
+    // jobs: [{key (groupKey|totalIn), path, totalIn}]
+    const missing = [];
+    const seen = new Set();
+    for (const j of jobs) {
+      if (!j || j.totalIn == null || j.totalIn <= 0n) continue;
+      if (!leg2Cache.has(j.key) && !seen.has(j.key)) { seen.add(j.key); missing.push(j); }
+    }
+    for (let s = 0; s < missing.length; s += CHUNK) {
+      const chunk = missing.slice(s, s + CHUNK);
+      stats.leg2Quotes += chunk.length;
+      stats.batches++;
+      const res = await rpcBatch(CHAINS[dstKey], chunk.map((m) => [CHAINS[dstKey].router, encodeGetAmountsOut(m.totalIn, m.path)]));
+      chunk.forEach((m, k) => {
+        const amts = decodeAmountsOut(res[k]);
+        const v = amts && amts.length ? amts[amts.length - 1] : null;
+        leg2Cache.set(m.key, v != null && v > 0n ? v : null);
+      });
+    }
+  }
+  return {
+    ensureLeg1, ensureLeg2, stats,
+    getLeg1: (cand, amount) => leg1Cache.get(leg1Key(cand, amount)) ?? null,
+    hasLeg1: (cand, amount) => leg1Cache.has(leg1Key(cand, amount)),
+    getLeg2: (key) => leg2Cache.get(key) ?? null,
+    hasLeg2: (key) => leg2Cache.has(key),
+  };
 }
 async function evaluateCrossSplit(srcKey, dstKey, amountIn, cands) {
   const enabled = (cands || []).filter((c) => c.enabled);
@@ -1177,30 +1209,63 @@ async function evaluateCrossSplit(srcKey, dstKey, amountIn, cands) {
   const candIdx = new Map(); enabled.forEach((c, i) => candIdx.set(c, i));
   const quoter = makeCrossSplitQuoter(srcKey, dstKey, candIdx);
   const partAmount = (pct) => (amountIn * BigInt(pct)) / 100n;
-  const jobsOf = (alloc) => alloc.map((l) => ({ cand: l.cand, amount: partAmount(l.pct) }));
-  const scoreFromCache = (alloc) => {
-    let total = 0n;
-    const parts = [];
-    for (const l of alloc) {
-      const amt = partAmount(l.pct);
-      if (amt <= 0n) return null;
-      const q = quoter.get(l.cand, amt);
-      if (!q) return null;
-      total += q.finalOut;
-      parts.push({ cand: l.cand, pct: l.pct, amountIn: amt, leg1Out: q.leg1Out, finalOut: q.finalOut });
+  /* Batch-scorer for allocations ([{cand, pct, amountIn?}]).
+     v6.4: parts sharing one leg 2 (same intermediate + same leg2Path) get ONE
+     combined leg-2 quote on their summed bridge arrival, distributed back
+     pro-rata (see combineLeg2Groups). Leg 1 stays per-part independent.
+     A part whose leg-1 output is missing or below the bridge minimum makes
+     the whole allocation unusable (null), as before. */
+  const scoreAllocations = async (allocs) => {
+    const partLists = allocs.map((a) => a.map((l) => ({
+      cand: l.cand, pct: l.pct, amountIn: l.amountIn != null ? l.amountIn : partAmount(l.pct),
+    })));
+    await quoter.ensureLeg1(partLists.flat().map((p) => ({ cand: p.cand, amount: p.amountIn })));
+    const resolved = partLists.map((parts) => {
+      const items = [];
+      for (const p of parts) {
+        if (p.amountIn <= 0n) return null;
+        const o1 = quoter.getLeg1(p.cand, p.amountIn);
+        if (o1 == null || o1 <= 0n || o1 < (10n ** BigInt(p.cand.tSrc.decimals))) return null;
+        items.push({ cand: p.cand, pct: p.pct, amountIn: p.amountIn, leg1Out: o1 });
+      }
+      return items;
+    });
+    const leg2Jobs = new Map();
+    for (const items of resolved) {
+      if (!items) continue;
+      for (const g of combineLeg2Groups(items)) {
+        const key = g.key + "|" + g.totalIn.toString();
+        if (!quoter.hasLeg2(key)) leg2Jobs.set(key, { key, path: g.cand.leg2Path, totalIn: g.totalIn });
+      }
     }
-    return { parts, totalOut: total };
+    await quoter.ensureLeg2([...leg2Jobs.values()]);
+    return resolved.map((items) => {
+      if (!items) return null;
+      const parts = items.map((p) => ({ cand: p.cand, pct: p.pct, amountIn: p.amountIn, leg1Out: p.leg1Out, finalOut: p.leg1Out }));
+      for (const g of combineLeg2Groups(items)) {
+        const tot = quoter.getLeg2(g.key + "|" + g.totalIn.toString());
+        if (tot == null || tot <= 0n) return null;
+        const shares = distributeCombinedOut(tot, g.idxs.map((i) => items[i].leg1Out));
+        g.idxs.forEach((pi, k) => { parts[pi].finalOut = shares[k]; });
+      }
+      let total = 0n;
+      for (const p of parts) {
+        if (p.finalOut == null || p.finalOut <= 0n) return null;
+        total += p.finalOut;
+      }
+      return { parts, totalOut: total };
+    });
   };
   let evaluated = 0;
   let best = null;
   const considerAll = async (allocs) => {
     if (!allocs.length) return;
-    await quoter.ensure(allocs.flatMap(jobsOf));
-    for (const a of allocs) {
+    const scores = await scoreAllocations(allocs);
+    allocs.forEach((a, i) => {
       evaluated++;
-      const s = scoreFromCache(a);
+      const s = scores[i];
       if (s && (!best || s.totalOut > best.totalOut)) best = s;
-    }
+    });
   };
   // ---- stage 1a: 10% grid over the pool (2..5 parts, each >= 10%) ----
   const combosOf = (n) => {
@@ -1217,7 +1282,6 @@ async function evaluateCrossSplit(srcKey, dstKey, amountIn, cands) {
     if (pool.length < n) break;
     for (const idxs of combosOf(n)) {
       const routes = idxs.map((i) => pool[i]);
-      if (!splitAllocAllowed(routes)) continue;
       for (const comp of X_SPLIT_COMPS[n]) {
         gridAllocs.push(routes.map((cand, k) => ({ cand, pct: comp[k] })));
       }
@@ -1229,41 +1293,37 @@ async function evaluateCrossSplit(srcKey, dstKey, amountIn, cands) {
   const pairPool = pool.slice(0, 5);
   const pairAllocs = [];
   for (let i = 0; i < pairPool.length; i++) for (let j = i + 1; j < pairPool.length; j++) {
-    if (!splitAllocAllowed([pairPool[i], pairPool[j]])) continue;
     for (let p = 1; p <= 99; p++) pairAllocs.push([{ cand: pairPool[i], pct: p }, { cand: pairPool[j], pct: 100 - p }]);
   }
   await considerAll(pairAllocs);
   // ---- stage 2 (v6.2): hill-climb refinement 5% -> 2% -> 1%. Adds may come
   // from ANY enabled full route (not just the pool), plans may reach 5 parts.
+  // Scoring goes through scoreAllocations, so the v6.4 combined leg-2 rule
+  // applies to every refinement move as well.
   let refineInfo = { iterations: 0, evaluatedMoves: 0 };
   if (best) {
-    const scoreMany = async (allocs) => {
-      await quoter.ensure(allocs.flatMap(jobsOf));
-      return allocs.map((a) => scoreFromCache(a));
-    };
     const refined = await refineSplitAllocation(
-      best.parts.map((p) => ({ cand: p.cand, pct: p.pct })), best, scoreMany,
-      { addCandidates: enabled, maxParts: 5, allowed: splitAllocAllowed, keyOf: (c) => candIdx.get(c), maxIterations: 150, budget: () => quoter.stats.partQuotes < 8000 });
+      best.parts.map((p) => ({ cand: p.cand, pct: p.pct })), best, scoreAllocations,
+      { addCandidates: enabled, maxParts: 5, keyOf: (c) => candIdx.get(c), maxIterations: 150, budget: () => quoter.stats.partQuotes + quoter.stats.leg2Quotes < 8000 });
     refineInfo = { iterations: refined.iterations, evaluatedMoves: refined.evaluatedMoves };
     evaluated += refined.evaluatedMoves;
     if (refined.score && refined.score.totalOut > best.totalOut) best = refined.score;
   }
   if (best) {
     // display order: largest part first; then fold the floor-rounding dust
-    // into the largest part with one exact re-quote, so the parts sum to
-    // exactly amountIn without overstating any part's quote.
+    // into the largest part and re-score the whole plan under the same
+    // (combined leg-2) model, so the parts sum to exactly amountIn without
+    // overstating any part's quote.
     best.parts.sort((a, b) => b.pct - a.pct);
     const dust = amountIn - best.parts.reduce((s, p) => s + p.amountIn, 0n);
     if (dust > 0n) {
-      const adj = await requoteSplitPart(srcKey, dstKey, best.parts[0].cand, best.parts[0].amountIn + dust);
-      if (adj) {
-        best.parts[0] = { ...best.parts[0], amountIn: best.parts[0].amountIn + dust, leg1Out: adj.leg1Out, finalOut: adj.finalOut };
-        best.totalOut = best.parts.reduce((s, p) => s + p.finalOut, 0n);
-      }
+      const adjusted = best.parts.map((p, i) => ({ cand: p.cand, pct: p.pct, amountIn: i === 0 ? p.amountIn + dust : p.amountIn }));
+      const rescored = (await scoreAllocations([adjusted]))[0];
+      if (rescored) best = rescored;
     }
   }
   const plan = best && best.totalOut > bestSingle.finalOut ? best : null;
-  return { evaluated, best, plan, bestSingle, refineStats: { partQuotes: quoter.stats.partQuotes, batches: quoter.stats.batches, iterations: refineInfo.iterations, ms: Date.now() - t0 } };
+  return { evaluated, best, plan, bestSingle, refineStats: { partQuotes: quoter.stats.partQuotes, leg2Quotes: quoter.stats.leg2Quotes, batches: quoter.stats.batches, iterations: refineInfo.iterations, ms: Date.now() - t0 } };
 }
 
 /* ---------- v6: split-flow arrival attribution (pure; harness-tested) ----------
@@ -2580,7 +2640,28 @@ function applyChip(pct) {
   $("amountIn").value = formatAmount(v, f.decimals, f.decimals).replace(/,/g, "");
   clearRoutes(t("statusAmountChanged"));
 }
+/* ---------- v6.3: language selector ----------
+   index.html は言語の振り分けページ (保存済み dexagg_lang = "ja" のときだけ
+   日本語、それ以外はデフォルト英語)。各言語ページのヘッダーにある
+   セレクタで切り替えると、選択を保存して相手ページへ移動する。 */
+function langTargetFor(value, currentLang) {
+  const v = value === "ja" ? "ja" : "en";
+  if (v === currentLang) return null;
+  return v === "ja" ? "ja.html" : "en.html";
+}
+function initLangSelector() {
+  const sel = typeof document !== "undefined" && document.getElementById ? document.getElementById("langSel") : null;
+  if (!sel || !sel.addEventListener) return;
+  sel.value = LANG;
+  sel.addEventListener("change", () => {
+    const v = sel.value === "ja" ? "ja" : "en";
+    try { localStorage.setItem("dexagg_lang", v); } catch (e) { /* storage unavailable: still navigate */ }
+    const target = langTargetFor(v, LANG);
+    if (target && typeof location !== "undefined" && location) location.href = target;
+  });
+}
 function initApp() {
+  initLangSelector();
   loadLocal();
   fillTokenSelects();
   $("chainInf").addEventListener("click", () => setChain("infinite"));
@@ -2629,6 +2710,7 @@ if (typeof document !== "undefined" && document.getElementById && document.getEl
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { CHAINS, STR, LANG, state, parseAmount, formatAmount, formatRate, formatGas, encAddr, encUint, encLegsTail, encodeGetAmountsOut, decodeAmountsOut, buildCandidatePaths, fetchQuotesForTokens, evaluateSplits, buildSwapTx, buildApproveTx, buildSplitTx, applySlippageBps, fetchTokenMeta, tokenById, allTokens, symbolFor, onQuote, onCaAdd, selectRoute, selectSplit, selectedRoute, setChain, estimateGasUnitsSingle, estimateGasUnitsSplit, splitExecutable,
     BRIDGE_PAIRS, BRIDGE_MAILBOX, bridgePairBySym, fetchBestRoute, fetchRoutesOnly, attachImpactsMulti, buildBridgeTx, decodeBridgeTxData, encodeRecipient32, fetchBridgeNativeQuote, fetchBridgeDelivered, readTokenBalance, extractMessageId, quoteCrossPlan, requotePathExact, serializeXFlow, restoreXFlow, saveXFlow, loadXFlow, setMode, setXSrc, xDstKey, onXQuote, renderXCandidates, startXFlow, renderXFlow, checkArrival, doXStep1, doXStep4, doXStep4Legacy, onXAbandon,
-    evaluateCrossSplit, crossSplitPool, splitAllocAllowed, requoteSplitPart, makeCrossSplitQuoter, refineSplitAllocation, attributeSplitArrivals, crossSplitPhase, startXSplitFlow, renderXSplitFlow, checkSplitArrival, doXSplitStep1, doXSplitStep2, doXSplitStep4,
-    qomTokenId, fetchBridgeFeeInQom, quoteArbRoute, quoteArbBoard, renderArbBoard, onArbScan, startArbFlow, startReturnFlow };
+    evaluateCrossSplit, crossSplitPool, requoteSplitPart, makeCrossSplitQuoter, refineSplitAllocation, leg2GroupKey, combineLeg2Groups, distributeCombinedOut, attributeSplitArrivals, crossSplitPhase, startXSplitFlow, renderXSplitFlow, checkSplitArrival, doXSplitStep1, doXSplitStep2, doXSplitStep4,
+    qomTokenId, fetchBridgeFeeInQom, quoteArbRoute, quoteArbBoard, renderArbBoard, onArbScan, startArbFlow, startReturnFlow,
+    langTargetFor, initLangSelector };
 }

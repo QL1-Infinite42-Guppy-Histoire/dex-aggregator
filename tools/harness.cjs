@@ -4,7 +4,7 @@
 const fs = require("fs");
 const vm = require("vm");
 
-const IDS = ["chainInf", "chainQl1", "chainTest", "testnetBanner", "chainNote", "connectBtn", "accountLine", "status", "fromToken", "toToken", "fromBalance", "toBalance", "amountIn", "flipBtn", "quoteBtn", "planArea", "routeList", "splitNote", "rateLine", "rateInvertBtn", "gasLine", "receiveOut", "minLine", "swapBtn", "txResult", "slipCustom", "caInput", "caAddBtn", "caMsg", "modeSame", "modeCross", "modeNote", "swapPanel", "caPanel", "crossPanel", "xSrcInf", "xSrcQl1", "xDstLabel", "xFromToken", "xToToken", "xFromBalance", "xAmount", "xQuoteBtn", "xStatus", "xCandidates", "xFlow", "xAbandon", "arbPanel", "arbAmount", "arbScanBtn", "arbStatus", "arbBoard", "arbTestnetNote"];
+const IDS = ["chainInf", "chainQl1", "chainTest", "testnetBanner", "chainNote", "connectBtn", "accountLine", "status", "fromToken", "toToken", "fromBalance", "toBalance", "amountIn", "flipBtn", "quoteBtn", "planArea", "routeList", "splitNote", "rateLine", "rateInvertBtn", "gasLine", "receiveOut", "minLine", "swapBtn", "txResult", "slipCustom", "caInput", "caAddBtn", "caMsg", "modeSame", "modeCross", "modeNote", "swapPanel", "caPanel", "crossPanel", "xSrcInf", "xSrcQl1", "xDstLabel", "xFromToken", "xToToken", "xFromBalance", "xAmount", "xQuoteBtn", "xStatus", "xCandidates", "xFlow", "xAbandon", "arbPanel", "arbAmount", "arbScanBtn", "arbStatus", "arbBoard", "arbTestnetNote", "langSel"];
 
 function loadPage(lang, seedStore) {
   function makeEl(id) {
@@ -187,7 +187,7 @@ function loadPage(lang, seedStore) {
   console.log("[V4-EN] board rows:", en3.app.state.arbRows.length, "| html single group:", en3.els.arbBoard.innerHTML.includes("One-way arbitrage"), "| RT group:", en3.els.arbBoard.innerHTML.includes("Round-trip"), "| status:", en3.els.arbStatus.textContent.slice(0, 60));
 
   // ---- v5: full routes ----
-  const jp5 = loadPage("index.html", {});
+  const jp5 = loadPage("ja.html", {});
   jp5.app.setMode("cross"); jp5.app.setXSrc("infinite");
   jp5.els.xFromToken.value = "usdt"; jp5.els.xToToken.value = "native"; jp5.els.xAmount.value = "1000";
   await jp5.app.onXQuote();
@@ -213,7 +213,7 @@ function loadPage(lang, seedStore) {
     const saved = jp5.store["dexagg_xflow_v1"] || "";
     console.log("[V5-JP] persisted localStorage carries leg1 path:", saved.includes("swap1Path") && saved.includes(FISH_A.slice(0, 20)));
     // reload with the same store -> restore keeps the paths
-    const jp5b = loadPage("index.html", jp5.store);
+    const jp5b = loadPage("ja.html", jp5.store);
     const restored = jp5b.app.restoreXFlow(jp5.store["dexagg_xflow_v1"]); // restoreXFlow takes the raw JSON string
     console.log("[V5-JP] reload-resume keeps swap1Path:", JSON.stringify(restored && restored.swap1Path) === JSON.stringify(ex2.leg1Path), "| step:", restored && restored.step);
     // legacy v4 flow (no pathsV5 / no swap2Path) still renders step 4 with the legacy button
@@ -264,7 +264,7 @@ function loadPage(lang, seedStore) {
   jp6c.els.xFromToken.value = "qom"; jp6c.els.xToToken.value = "native"; jp6c.els.xAmount.value = "10000000000";
   await jp6c.app.onXQuote();
   const xsB = jp6c.app.state.xSplit;
-  console.log("[V6-JP caseB] 10B QOM: best single via:", jp6c.app.state.xCandidates.find((c) => c.enabled).pair.sym, "| best split vs single:", xsB && xsB.best ? ((Number(xsB.best.totalOut) / Number(xsB.bestSingle.finalOut) - 1) * 100).toFixed(2) + "%" : null, "| plan is null (single wins):", !!xsB && xsB.plan === null, "| split-lost note shown:", jp6c.els.xCandidates.innerHTML.includes("単一ルートがいちばん"));
+  console.log("[V6-JP caseB] 10B QOM: best single via:", jp6c.app.state.xCandidates.find((c) => c.enabled).pair.sym, "| best split vs single:", xsB && xsB.best ? ((Number(xsB.best.totalOut) / Number(xsB.bestSingle.finalOut) - 1) * 100).toFixed(2) + "%" : null, "| plan (v6.4: BABY-variant split now wins slightly — see v6.4 finding):", !!(xsB && xsB.plan), "| split card shown:", jp6c.els.xCandidates.innerHTML.includes("分割プラン"));
 
   // ---- v6.1: case C (1,000 USDT) — same-intermediate (QOM) path variants in one split plan ----
   const jp61 = loadPage("ja", {});
@@ -362,6 +362,71 @@ function loadPage(lang, seedStore) {
     const pcts2 = Object.fromEntries(r2.alloc.map((p) => [p.cand.id, p.pct]));
     console.log("[V6.2-unit] add move: C entered the plan:", (pcts2.C || 0) >= 1, "| pcts:", JSON.stringify(pcts2), "| total beats no-C optimum:", r2.score.totalOut > r1.score.totalOut, "| pct sum:", r2.alloc.reduce((s, p) => s + p.pct, 0));
   }
+
+  // ---- v6.3: language selector + English-default gate ----
+  {
+    const fs2 = require("fs");
+    const gate = fs2.readFileSync(__dirname + "/../docs/index.html", "utf8");
+    const jaHtml = fs2.readFileSync(__dirname + "/../docs/ja.html", "utf8");
+    const enHtml = fs2.readFileSync(__dirname + "/../docs/en.html", "utf8");
+    console.log("\n[V6.3] gate page: reads dexagg_lang and redirects (ja only when saved, else en):", gate.includes("dexagg_lang") && gate.includes('"ja.html"') && gate.includes('"en.html"') && gate.includes('lang === "ja"'), "| fallback/noscript links to both pages:", gate.includes('href="en.html"') && gate.includes('href="ja.html"'));
+    console.log("[V6.3] ja.html is the JP app page (lang=ja, has langSel, loads app.js):", jaHtml.includes('lang="ja"') && jaHtml.includes('id="langSel"') && jaHtml.includes('src="app.js"'));
+    console.log("[V6.3] en.html is the EN app page (lang=en, has langSel, loads app.js):", enHtml.includes('lang="en"') && enHtml.includes('id="langSel"') && enHtml.includes('src="app.js"'));
+    const lt = jp6.app.langTargetFor;
+    console.log("[V6.3] langTargetFor: en from ja:", lt("en", "ja") === "en.html", "| ja from en:", lt("ja", "en") === "ja.html", "| same language is a no-op:", lt("ja", "ja") === null && lt("en", "en") === null);
+    const jpl = loadPage("ja", {});
+    const initValJ = jpl.els.langSel.value;
+    const handlersJ = jpl.els.langSel._handlers.change || [];
+    jpl.els.langSel.value = "en";
+    if (handlersJ.length) handlersJ[0]();
+    console.log("[V6.3] JP page selector: initial value = page lang:", initValJ === "ja", "| change handler registered:", handlersJ.length > 0, "| picking English saved dexagg_lang:", jpl.store["dexagg_lang"]);
+    const enl = loadPage("en", {});
+    const initValE = enl.els.langSel.value;
+    const handlersE = enl.els.langSel._handlers.change || [];
+    enl.els.langSel.value = "ja";
+    if (handlersE.length) handlersE[0]();
+    console.log("[V6.3] EN page selector: initial value = page lang:", initValE === "en", "| change handler registered:", handlersE.length > 0, "| picking Japanese saved dexagg_lang:", enl.store["dexagg_lang"]);
+  }
+
+  // ---- v6.4: combined leg-2 quoting (shared intermediate) ----
+  {
+    const P = (sym, leg2Path, leg1Out) => ({ cand: { pair: { sym }, leg2Path }, leg1Out });
+    const gParts = [P("QOM", ["0xw", "0xc"], 300n), P("QOM", ["0xw", "0xc"], 200n), P("BABY", ["0xb", "0xw", "0xc"], 50n), P("QOM", null, 7n), P("QOM", ["0xw", "0xq"], 11n)];
+    const groups = jp6.app.combineLeg2Groups(gParts);
+    const gQom = groups.find((g) => g.key.startsWith("QOM|"));
+    const gBaby = groups.find((g) => g.key.startsWith("BABY|"));
+    const gQom2 = groups.filter((g) => g.key.startsWith("QOM|"))[1];
+    console.log("\n[V6.4-unit] grouping: 2 leg2 groups + separate path-variant group:", groups.length === 3, "| QOM same-path group sums arrivals (500) in order:", !!gQom && gQom.totalIn === 500n && JSON.stringify(gQom.idxs) === "[0,1]", "| BABY group:", !!gBaby && gBaby.totalIn === 50n, "| different leg2Path is a different group:", !!gQom2 && gQom2.totalIn === 11n);
+    const sh1 = jp6.app.distributeCombinedOut(1000n, [300n, 200n]);
+    const sh2 = jp6.app.distributeCombinedOut(101n, [1n, 1n]);
+    const sh3 = jp6.app.distributeCombinedOut(100n, [1n, 2n]);
+    console.log("[V6.4-unit] distribution pro-rata:", JSON.stringify(sh1.map(String)) === '["600","400"]', "| dust to largest part:", JSON.stringify(sh2.map(String)) === '["51","50"]', "| floors + dust to largest:", JSON.stringify(sh3.map(String)) === '["33","67"]', "| shares always sum to the combined quote:", sh1.reduce((s, x) => s + x, 0n) === 1000n && sh2.reduce((s, x) => s + x, 0n) === 101n);
+  }
+  // live case D: destination qCAW — the R2 (USDT->FISH->QOM leg1) part must be
+  // allowed into the split plan now that shared leg 2 is combined, not banned.
+  const jp64 = loadPage("ja", {});
+  jp64.app.state.account = "0x1111111111111111111111111111111111111111";
+  jp64.app.setMode("cross"); jp64.app.setXSrc("infinite");
+  jp64.els.xFromToken.value = "usdt"; jp64.els.xToToken.value = "qcaw"; jp64.els.xAmount.value = "1000";
+  await jp64.app.onXQuote();
+  const xsD = jp64.app.state.xSplit;
+  const usdtA2 = jp64.app.tokenById("infinite", "usdt").address.toLowerCase();
+  const fishA2 = jp64.app.tokenById("infinite", "fish").address.toLowerCase();
+  const qomA2 = jp64.app.tokenById("infinite", "qom").address.toLowerCase();
+  const isR2PartD = (p) => p.cand.pair.sym === "QOM" && Array.isArray(p.cand.leg1Path) && p.cand.leg1Path.length === 3 &&
+    p.cand.leg1Path[0].toLowerCase() === usdtA2 && p.cand.leg1Path[1].toLowerCase() === fishA2 && p.cand.leg1Path[2].toLowerCase() === qomA2;
+  console.log("[V6.4-JP caseD] dest qCAW: plan:", !!(xsD && xsD.plan), "| total:", xsD && xsD.plan && jp64.app.formatAmount(xsD.plan.totalOut, 18, 2), "qCAW | includes R2 part (leg1 USDT->FISH->QOM):", !!(xsD && xsD.plan && xsD.plan.parts.some(isR2PartD)), "| parts:", xsD && xsD.plan && xsD.plan.parts.map((p) => p.pct + "%:" + p.cand.pair.sym).join(" + "));
+  if (xsD && xsD.plan) {
+    await jp64.app.startXSplitFlow();
+    const sfD = jp64.app.state.xflow;
+    console.log("[V6.4-JP caseD] split flow from refined plan: parts:", sfD && sfD.parts.length, "| pct sum:", sfD && sfD.parts.reduce((s, p) => s + p.pct, 0), "| amounts sum == amountIn:", !!sfD && sfD.parts.reduce((s, p) => s + BigInt(p.amountIn), 0n).toString() === sfD.amountIn);
+  }
+  const en64 = loadPage("en", {});
+  en64.app.setMode("cross"); en64.app.setXSrc("infinite");
+  en64.els.xFromToken.value = "usdt"; en64.els.xToToken.value = "qcaw"; en64.els.xAmount.value = "1000";
+  await en64.app.onXQuote();
+  const xsDE = en64.app.state.xSplit;
+  console.log("[V6.4-EN caseD] plan:", !!(xsDE && xsDE.plan), "| includes R2 part:", !!(xsDE && xsDE.plan && xsDE.plan.parts.some(isR2PartD)));
 
   console.log("\nHARNESS DONE");
 })().catch((e) => { console.error("HARNESS FAILED:", e); process.exit(1); });
