@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DEXアグリゲーター（42 Chain / QL1）</title>
+<meta name="description" content="42 Chain（Infinite）と QL1 で、直接・経由ありの全部のルートを比べて、いちばん多く受け取れるルートで交換できるサイト。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>DEXアグリゲーター（42 Chain / QL1）</h1>
+  <p class="sub">いちばん多く受け取れるルートを、全部のプールから探します。</p>
+  <p class="sub small">「ルート」＝交換の通り道です。たとえば USDT → 42 を直接交換する道と、USDT → FISH → 42 のように途中で別のトークンを経由する道があり、金額によって多い方が変わります。このサイトは全ての道を見積もりして並べます。</p>
+</header>
+
+<section class="panel">
+  <h2>チェーン</h2>
+  <div class="chain-row">
+    <button id="chainInf" type="button" class="chain-btn active">42 Chain</button>
+    <button id="chainQl1" type="button" class="chain-btn">QL1</button>
+  </div>
+  <p id="chainNote" class="count"></p>
+  <div class="connect-row">
+    <button id="connectBtn" type="button">ウォレットを接続（MetaMask）</button>
+    <span id="accountLine" class="count">未接続（見積もりだけなら接続なしで使えます）</span>
+  </div>
+  <p id="status" class="status"></p>
+</section>
+
+<section class="panel">
+  <h2>交換する</h2>
+  <label class="fld"><span>出すトークン</span>
+    <select id="fromToken"></select>
+  </label>
+  <p id="fromBalance" class="count"></p>
+  <label class="fld"><span>金額</span>
+    <input id="amountIn" type="text" inputmode="decimal" autocomplete="off" placeholder="0.0">
+  </label>
+  <div class="chips">
+    <button type="button" class="chip" data-pct="25">25%</button>
+    <button type="button" class="chip" data-pct="50">50%</button>
+    <button type="button" class="chip" data-pct="75">75%</button>
+    <button type="button" class="chip" data-pct="MAX">MAX</button>
+  </div>
+  <p class="count">MAX はネイティブ通貨（42 / QOM）の場合、ガス代用に 0.01 だけ残して計算します。トークンの場合は全額です。</p>
+  <div class="flip-row"><button id="flipBtn" type="button" aria-label="上下入れ替え">⇅ 入れ替える</button></div>
+  <label class="fld"><span>受け取るトークン</span>
+    <select id="toToken"></select>
+  </label>
+  <p id="toBalance" class="count"></p>
+
+  <div class="slip">
+    <div class="slip-label">スリッページ（値段がズレても許せる幅）</div>
+    <p class="count">見積もりから実際の値段がこの幅より悪くなったら、取引は自動で失敗して資産を守ります。</p>
+    <div class="slip-row">
+      <button type="button" class="slip-btn" data-val="0.5">0.5%</button>
+      <button type="button" class="slip-btn active" data-val="1">1%</button>
+      <button type="button" class="slip-btn" data-val="3">3%</button>
+      <input id="slipCustom" type="text" inputmode="decimal" placeholder="自分で入力（%）">
+    </div>
+  </div>
+
+  <button id="quoteBtn" type="button" class="big">ルートを比べる</button>
+  <div id="routeList" class="route-list"></div>
+  <p id="splitNote" class="split-note"></p>
+  <p id="minLine" class="count"></p>
+  <button id="swapBtn" type="button" class="big swap" disabled>このルートで交換する</button>
+  <p id="txResult" class="status"></p>
+  <p class="count">交換は有効期限20分で送ります。初めて使うトークンでは、最初に「使う許可」の確認がウォレットに出ます。</p>
+</section>
+
+<section class="panel">
+  <h2>CAを貼ってトークンを追加</h2>
+  <p class="count">一覧に無いトークンは、コントラクトアドレス（CA）を貼るとチェーンから読み取って追加できます。追加したトークンはこのブラウザに保存されます。</p>
+  <div class="ca-row">
+    <input id="caInput" type="text" placeholder="0x…（今選んでいるチェーンのトークン）" autocomplete="off" spellcheck="false">
+    <button id="caAddBtn" type="button">追加</button>
+  </div>
+  <p id="caMsg" class="status"></p>
+</section>
+
+<section class="panel">
+  <h2>仕組みと正直な限界</h2>
+  <ul class="notes">
+    <li>見積もりは DEX ルーターの <code>getAmountsOut</code> を、直接・1つ経由・2つ経由の全ルートで実際に叩いた結果です。推測の価格ではありません。</li>
+    <li>「値段の下がり幅」は、プールの残高から計算した手数料なしの目安と、実際の見積もりとの差です（手数料＋金額の大きさによる影響）。</li>
+    <li><b>分割（例：70%を直接、30%を経由ルートで一度に交換）は実行できません。</b>分割を1回の取引で実行するには専用のアグリゲーター・コントラクトが必要ですが、このチェーンにはまだありません。このサイトでは分割した場合の見積もりだけを「分割したら（参考）」として表示することがあります。</li>
+    <li>プールが小さいトークンでは、見積もりと実際の結果がズレやすくなります。少しの金額で試してから大きな金額を扱ってください。</li>
+    <li>このサイトは手数料を取りません。交換は各チェーンの DEX（42 Chain: Don't Panic／QL1: QomSwap）のルーターと直接やり取りします。</li>
+  </ul>
+</section>
+
+<footer>
+  <p>データ取得元：42 Chain RPC / QL1 RPC（プールを直接読取）。ソースコードは MIT ライセンスで公開しています。</p>
+</footer>
+<script src="app.js"></script>
+</body>
+</html>
