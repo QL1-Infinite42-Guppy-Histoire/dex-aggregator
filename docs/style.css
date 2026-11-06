@@ -89,3 +89,11 @@ footer { max-width: 760px; margin: 0 auto; padding: 4px 16px 28px; color: #8d99a
 .badge-step { background: #232c44; color: #c3cad7; border-radius: 6px; padding: 2px 7px; font-size: 11px; }
 .xstep.current .badge-step { background: #2470d8; color: #fff; }
 .fld select, .fld input { width: 100%; box-sizing: border-box; margin-top: 4px; padding: 12px; font-size: 16px; border-radius: 10px; border: 1px solid #33405e; background: #0f1420; color: #fff; }
+
+/* v7: aggregator (SplitSwap) deploy area */
+.agg-area { margin: 14px 0 4px; padding: 12px 14px; border: 1px solid rgba(148,197,255,.35); border-radius: 12px; background: rgba(20,32,54,.55); }
+.agg-title { margin: 0 0 6px; font-weight: 700; font-size: .95rem; }
+.agg-line { margin: 4px 0; font-size: .88rem; line-height: 1.5; word-break: break-all; }
+.agg-line.err { color: #ff9d9d; }
+.agg-btn { margin-top: 8px; padding: 8px 14px; border-radius: 10px; border: 1px solid rgba(148,197,255,.6); background: rgba(38,66,110,.65); color: #eaf3ff; cursor: pointer; font-size: .9rem; }
+.agg-btn:hover { background: rgba(52,88,148,.75); }

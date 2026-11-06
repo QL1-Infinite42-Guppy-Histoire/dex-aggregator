@@ -86,6 +86,7 @@
   <p id="minLine" class="count"></p>
   <button id="swapBtn" type="button" class="big swap" disabled>Swap with this route</button>
   <p id="txResult" class="status"></p>
+  <div id="aggArea" class="agg-area"></div>
   <p class="count">Swaps are sent with a 20-minute deadline. The first time you use a token, your wallet will ask for a spending approval. Gas figures are estimates.</p>
 </section>
 
@@ -158,7 +159,7 @@
   <ul class="notes">
     <li>Quotes are real: the site calls the DEX router's <code>getAmountsOut</code> for every candidate route (direct, 1 hop, 2 hops). Nothing is guessed from a price feed.</li>
     <li>Splits across the top routes (90/10, 80/20, …, 50/50, and 3-way splits) are quoted the same way. When a split beats every single route, it is shown as the recommended "Split plan".</li>
-    <li><b>Executing a split needs a dedicated aggregator contract.</b> The contract (SplitSwap) is included in this site's repository, but it is not deployed on 42 Chain / QL1 mainnet yet, so on mainnet a split is a <b>quote only</b> and execution uses a single route. It is also not deployed on the testnet yet (no public TEST42 faucet could be found to pay for deployment gas). Once deployed, the split button on this site works as-is.</li>
+    <li><b>Executing a split needs a dedicated aggregator contract.</b> The contract (SplitSwap) is published in this site's repository, and you can deploy it yourself from your own wallet right on this page, per chain (v7). The deployed address is saved in this browser, and split plans then execute as shown. On a chain where you have not deployed it, a split is a <b>quote only</b> and execution uses a single route. The testnet works the same way but needs TEST42 for gas (no public faucet was found). Each split leg also carries its own minimum output (v7). Cross-chain split plans are shown only when they still beat the best single route after the extra bridge messaging cost (v6.5).</li>
     <li>The testnet DEX router address in public records had one character too many; this site uses the address recovered by verifying every candidate live on-chain. The testnet token list is built from the testnet's real pairs.</li>
     <li>"Price impact" is the difference between a no-fee estimate from pool reserves and the real quote (fees + size impact). Gas figures are estimates too.</li>
     <li>Small pools can move between quote and execution. Try a small amount first before swapping a large one.</li>
@@ -171,7 +172,7 @@
 </section>
 
 <footer>
-  <p>v6.4 / Data: 42 Chain RPC / QL1 RPC / 42 Testnet RPC (read directly from the pools). Source code is published under the MIT license.</p>
+  <p>v7 / Data: 42 Chain RPC / QL1 RPC / 42 Testnet RPC (read directly from the pools). Source code is published under the MIT license.</p>
 </footer>
 <script src="app.js"></script>
 </body>

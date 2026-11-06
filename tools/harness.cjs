@@ -4,7 +4,7 @@
 const fs = require("fs");
 const vm = require("vm");
 
-const IDS = ["chainInf", "chainQl1", "chainTest", "testnetBanner", "chainNote", "connectBtn", "accountLine", "status", "fromToken", "toToken", "fromBalance", "toBalance", "amountIn", "flipBtn", "quoteBtn", "planArea", "routeList", "splitNote", "rateLine", "rateInvertBtn", "gasLine", "receiveOut", "minLine", "swapBtn", "txResult", "slipCustom", "caInput", "caAddBtn", "caMsg", "modeSame", "modeCross", "modeNote", "swapPanel", "caPanel", "crossPanel", "xSrcInf", "xSrcQl1", "xDstLabel", "xFromToken", "xToToken", "xFromBalance", "xAmount", "xQuoteBtn", "xStatus", "xCandidates", "xFlow", "xAbandon", "arbPanel", "arbAmount", "arbScanBtn", "arbStatus", "arbBoard", "arbTestnetNote", "langSel"];
+const IDS = ["chainInf", "chainQl1", "chainTest", "testnetBanner", "chainNote", "connectBtn", "accountLine", "status", "fromToken", "toToken", "fromBalance", "toBalance", "amountIn", "flipBtn", "quoteBtn", "planArea", "routeList", "splitNote", "rateLine", "rateInvertBtn", "gasLine", "receiveOut", "minLine", "swapBtn", "txResult", "slipCustom", "caInput", "caAddBtn", "caMsg", "modeSame", "modeCross", "modeNote", "swapPanel", "caPanel", "crossPanel", "xSrcInf", "xSrcQl1", "xDstLabel", "xFromToken", "xToToken", "xFromBalance", "xAmount", "xQuoteBtn", "xStatus", "xCandidates", "xFlow", "xAbandon", "arbPanel", "arbAmount", "arbScanBtn", "arbStatus", "arbBoard", "arbTestnetNote", "langSel", "aggArea"];
 
 function loadPage(lang, seedStore) {
   function makeEl(id) {
@@ -436,6 +436,51 @@ function loadPage(lang, seedStore) {
   const netD = jp64.app.state.xSplitNet, netDE = en64.app.state.xSplitNet;
   console.log("[V6.5-JP caseD] net verdict: shown:", netD && netD.shown, "| net gain:", netD && jp64.app.formatAmount(netD.netGain, 18, 2), "qCAW | extra fee in dest terms:", netD && jp64.app.formatAmount(netD.extraFeeDest, 18, 2), "qCAW");
   console.log("[V6.5-EN caseD] net verdict: shown:", netDE && netDE.shown, "| net line on card (EN):", en64.els.xCandidates.innerHTML.includes("After the extra bridge cost"));
+
+  // ---- v7: aggregator storage / deploy tx / split calldata round-trip ----
+  const fs7 = require("fs"), path7 = require("path");
+  const artBc = JSON.parse(fs7.readFileSync(path7.join(__dirname, "..", "contracts", "SplitSwap.json"), "utf8")).bytecode;
+  const jp7 = loadPage("ja", {});
+  const a7 = jp7.app;
+  const acct7 = "0x1111111111111111111111111111111111111111";
+  console.log("\n[V7-JP] fresh page: splitExecutable(infinite):", a7.splitExecutable(a7.CHAINS.infinite), "| aggArea deploy btn:", jp7.els.aggArea.innerHTML.includes("アグリゲーターをデプロイ"), "| effectiveAggregator:", a7.effectiveAggregator(a7.CHAINS.infinite), "| source:", a7.aggregatorSource(a7.CHAINS.infinite));
+  const dtx = a7.buildDeployTx(a7.CHAINS.infinite);
+  const dtx2 = a7.buildDeployTx(a7.CHAINS.ql1);
+  console.log("[V7] deploy tx: to null:", dtx.to === null, "| value 0:", dtx.value === 0n, "| data starts with SPLIT_BYTECODE:", dtx.data.startsWith(a7.SPLIT_BYTECODE), "| ctor arg == infinite router:", ("0x" + dtx.data.slice(-40)) === a7.CHAINS.infinite.router.toLowerCase(), "| ql1 ctor arg == ql1 router:", ("0x" + dtx2.data.slice(-40)) === a7.CHAINS.ql1.router.toLowerCase(), "| embedded bytecode == contracts artifact:", a7.SPLIT_BYTECODE === artBc);
+  const FAKE_AGG = "0x3333333333333333333333333333333333333333";
+  a7.setStoredAggregator("infinite", FAKE_AGG);
+  console.log("[V7] stored: splitExecutable:", a7.splitExecutable(a7.CHAINS.infinite), "| source:", a7.aggregatorSource(a7.CHAINS.infinite), "| storedAggregator:", a7.storedAggregator("infinite"));
+  a7.renderAggArea();
+  console.log("[V7-JP] aggArea in-use: addr shown:", jp7.els.aggArea.innerHTML.includes("0x3333"), "| clear btn:", jp7.els.aggArea.innerHTML.includes("使うのをやめる"), "| explorer link:", jp7.els.aggArea.innerHTML.includes("/address/" + FAKE_AGG));
+  const usdt7 = a7.tokenById("infinite", "usdt"), fish7 = a7.tokenById("infinite", "fish"), nat7 = a7.tokenById("infinite", "native");
+  const plan7 = { legs: [
+    { route: { path: [usdt7.address, fish7.address], hops: 1 }, pct: 60, amountIn: 600n * 10n ** 6n, amountOut: 5000n * 10n ** 18n },
+    { route: { path: [usdt7.address, nat7.address, fish7.address], hops: 2 }, pct: 40, amountIn: 400n * 10n ** 6n, amountOut: 3400n * 10n ** 18n },
+  ], totalOut: 8400n * 10n ** 18n };
+  const txTT = a7.buildSplitTx(a7.CHAINS.infinite, usdt7, fish7, plan7, acct7, 1, 1700000000);
+  const decTT = a7.decodeSplitTxData(txTT.data);
+  const legsOk7 = !!decTT && decTT.legs.every((l, i) => l.amountIn === plan7.legs[i].amountIn && l.amountOutMin === a7.applySlippageBps(plan7.legs[i].amountOut, 1) && l.path.join() === plan7.legs[i].route.path.map((x) => x.toLowerCase()).join());
+  console.log("[V7] swapSplit round-trip: to == stored agg:", txTT.to === FAKE_AGG, "| fn:", decTT && decTT.functionName, "| legs:", decTT && decTT.legs.length, "| legs round-trip (amountIn/minOut/path):", legsOk7, "| total min matches:", !!decTT && decTT.amountOutMinTotal === a7.applySlippageBps(plan7.totalOut, 1), "| tokenIn:", decTT && decTT.tokenIn === usdt7.address.toLowerCase(), "| tokenOut:", decTT && decTT.tokenOut === fish7.address.toLowerCase(), "| value:", txTT.value === 0n);
+  const txTN = a7.buildSplitTx(a7.CHAINS.infinite, usdt7, nat7, plan7, acct7, 0.5, 1700000000);
+  const decTN = a7.decodeSplitTxData(txTN.data);
+  console.log("[V7] swapSplitToNative round-trip: fn:", decTN && decTN.functionName, "| legs:", decTN && decTN.legs.length, "| tokenIn:", !!decTN && decTN.tokenIn === usdt7.address.toLowerCase(), "| total min:", !!decTN && decTN.amountOutMinTotal === a7.applySlippageBps(plan7.totalOut, 0.5), "| value:", txTN.value === 0n);
+  const planFN = { legs: [{ route: { path: [nat7.address, fish7.address], hops: 1 }, pct: 100, amountIn: 10n * 10n ** 18n, amountOut: 900n * 10n ** 18n }], totalOut: 900n * 10n ** 18n };
+  const txFN = a7.buildSplitTx(a7.CHAINS.infinite, nat7, fish7, planFN, acct7, 1, 1700000000);
+  const decFN = a7.decodeSplitTxData(txFN.data);
+  console.log("[V7] swapSplitFromNative round-trip: fn:", decFN && decFN.functionName, "| value == sum of legs:", txFN.value === 10n * 10n ** 18n, "| tokenOut:", !!decFN && decFN.tokenOut === fish7.address.toLowerCase(), "| leg minOut:", !!decFN && decFN.legs[0].amountOutMin === a7.applySlippageBps(planFN.legs[0].amountOut, 1));
+  jp7.app.state.account = acct7;
+  jp7.els.fromToken.value = "usdt"; jp7.els.toToken.value = "fish"; jp7.els.amountIn.value = "500";
+  await a7.onQuote();
+  const se7 = a7.state.splitEval;
+  if (se7 && se7.plan) {
+    a7.selectSplit();
+    console.log("[V7-JP] split plan + stored agg: selectedPlan:", JSON.stringify(a7.state.selectedPlan), "| swapBtn enabled:", jp7.els.swapBtn.disabled === false, "| swapBtn label:", jp7.els.swapBtn.textContent, "| splitNote executable:", jp7.els.splitNote.textContent.includes("そのまま実行できます"));
+  } else console.log("[V7-JP] note: no same-chain split plan at 500 USDT->FISH this run (pool state)");
+  a7.setStoredAggregator("infinite", null);
+  a7.renderAggArea();
+  console.log("[V7] cleared: splitExecutable:", a7.splitExecutable(a7.CHAINS.infinite), "| aggArea deploy btn back:", jp7.els.aggArea.innerHTML.includes("アグリゲーターをデプロイ"));
+  const en7 = loadPage("en", {});
+  console.log("[V7-EN] aggArea: title:", en7.els.aggArea.innerHTML.includes("Split contract"), "| deploy btn:", en7.els.aggArea.innerHTML.includes("Deploy the aggregator"));
 
   console.log("\nHARNESS DONE");
 })().catch((e) => { console.error("HARNESS FAILED:", e); process.exit(1); });

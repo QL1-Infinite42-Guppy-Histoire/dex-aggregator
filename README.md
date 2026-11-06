@@ -1,4 +1,4 @@
-# DEXアグリゲーター（42 Chain / QL1 / 42 Testnet）— v6.4
+# DEXアグリゲーター（42 Chain / QL1 / 42 Testnet）— v6.5 + v7
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -71,7 +71,7 @@ v5 から、クロスチェーンの結果は中継ごとの最良1件ではな�
   v4 以前の保存フロー（パス無し）は従来どおり同一チェーン画面への受け渡しで継続できます。
 - 価格差ボードは従来どおりで、行クリックではその中継の最良全体ルートが選ばれます。
 
-### クロスチェーン分割（v6〜v6.4）
+### クロスチェーン分割（v6〜v6.5）
 
 v6 から、クロスチェーンでも **全体ルート同士の分割** を評価します
 （同一チェーン内モードの分割と同じ考え方を、全体ルート単位に広げたもの）。
@@ -138,7 +138,60 @@ v6 から、クロスチェーンでも **全体ルート同士の分割** を�
 - **ブリッジはパートごとに別送信**です。42 Chain 発のメッセージ代
   （quoteNative、実測約3.07 [42]）はパート数分かかります。カードには
   合計額を明示します（QL1 発は実測0のまま）。DEX ガスもパート数分です。
+
+- **手数料引きで勝つときだけ出す（v6.5、ユーザー決定）**: 分割カードは、
+  追加のブリッジ代を引いても単一ベストに勝つ場合にだけ表示します。
+  追加代 = プランの全パートのメッセージ代合計 − 単一ベストのメッセージ代
+  （= 実質 (パート数 − 1) × quoteNative。QL1 発は 0 なので追加代も 0）。
+  換算はこのサイト自身の見積もり機構だけを使います: [42] の追加代を
+  Infinite の最良ルートで QOM に替え（ブリッジ 1:1 で QL1 の QOM と同量）、
+  宛先が QOM 以外なら QL1 の最良ルートでもう一度替えます（裁定ボードの
+  手数料換算と同じ考え方）。換算できなかった場合は安全側でプランを
+  出さず、理由を注記します。総量では勝つのに手数料引きで負ける場合は、
+  カードの代わりに「利益 +X ＜ 追加手数料 Y」の数字入り注記を出します。
+  勝つ場合はカードに手数料引きの利益も表示します。実測（2026-11-06）:
+  - ケースB（10B QOM → QOM）: 総勝ち +79,079,974 QOM に対し追加代
+    3.0721 [42] ≒ 3,454,417,785 QOM → **手数料負けでプランを出さない**
+    （v6.4 で出るようになったプランは、v6.5 で再び出なくなります。
+    勝ち分が第1ホップ分散による実在のものである点は変わりません）。
+  - ケースA（100 USDT → QOM）: 総勝ち +21,094,652,758、追加代
+    12.2884 [42] ≒ 13,755,298,521 → 手数料引き **+7,339,354,237 QOM
+    （+4.62%）** で表示。
+  - ケースC（1,000 USDT → QOM）: 総勝ち +405,559,552,922、追加代は
+    同じ 13,755,298,521 → 手数料引き **+391,804,254,401 QOM（+42.04%）**。
+  - ケースD（1,000 USDT → qCAW）: 総勝ち +204,522,537,322 qCAW、追加代
+    ≒ 6,762,677,879 qCAW → 手数料引き **+197,759,859,443 qCAW
+    （+46.20%）**。
 - v3〜v5 の単一ルート保存フローは従来どおり再開できます（復元の互換を維持）。
+
+### 同一チェーン分割の実行（v7）
+
+同一チェーン内の分割は、専用コントラクト **SplitSwap** を使って
+1トランザクションで実行できます（従来は見積もりのみでした）。
+
+- **サイト内デプロイ**: チェーンに使える住所が無い場合、交換パネルの下に
+  「アグリゲーターをデプロイ」が出ます。自分のウォレットで1回デプロイ
+  すると（ガス代は自分の負担、実測見積もり約 1,210,366 gas）、住所が
+  そのチェーン用にブラウザ（localStorage `dexagg_aggregator_v1`）へ
+  保存され、以降そのブラウザでは分割プランをそのまま実行できます。
+  保存前に、デプロイ先にコードがあり `router()` がそのチェーンの
+  DEX ルーターと一致することを自動確認します。住所の表示（エクスプ
+  ローラーへのリンク付き）と、保存した住所の利用停止（消去）もできます。
+  サイト設定（CHAINS）に内蔵住所が入ればそちらが優先されます。
+- **コントラクトの変更（v7）**: 各レッグに最低受取量（amountOutMin）を
+  追加しました。合計の最低量に加えて、レッグ単体でも見積もり−スリッ
+  ページを下回ると全体が失敗します。再コンパイルは solc 0.8.26 /
+  optimizer 200 runs / **EVM ターゲット paris** です。QL1 の EVM は
+  Shanghai の PUSH0 命令に未対応（デプロイ見積もりが
+  "invalid opcode: PUSH0" で失敗することを実測）なため、paris が必須です。
+  作成バイトコード 5,601 バイト。権限なし・資産の預かりなしは従来どおり。
+- 実行は従来の分割プランそのままです: ERC20 入力ならアグリゲーターへの
+  approve → splitSwap 系 tx を1回。ネイティブ入力は value = レッグ合計。
+  テストネットも同じデプロイ方法ですが、ガス代に TEST42 が必要です。
+- **正直な限界**: この開発環境からは実際の送信はしていません（鍵・資金が
+  無いため）。calldata の構築・復号の往復、デプロイ tx の見積もり
+  （3チェーン全て成功）、状態遷移は全てローカル検証済みです。実利用の
+  最初の一歩は「チェーンごとに1回デプロイ → 少額で初回の分割交換」です。
 
 ### ブリッジの実在確認（有効範囲の根拠）
 
@@ -420,13 +473,54 @@ QOM→42→FISH; +0.05–0.12% even when the shared leg-1 suffix is also
 combined), not the leg-2 double-count, so the old "phantom win"
 reading did not survive measurement.
 
-Honest limits: executing a split in one transaction requires a dedicated aggregator
-contract. The contract (**SplitSwap**, in `contracts/`) is written and compiled but **not
-deployed yet** — on mainnet, splits are quote-only; on the testnet, deployment is blocked
-only by the lack of TEST42 for gas (no public faucet was found). The testnet router
-address in public records was corrupted (41 hex digits); the address used here was
-recovered by verifying every single-character deletion live on-chain. The testnet token
-list is built from the testnet factory's real pairs. Site root
+**New in v6.5 — cross-chain splits must win after bridge fees:** a cross
+split plan card is now shown only when the split still beats the best
+single full route after the EXTRA bridge messaging cost: the plan's
+total nativeFee minus the single route's (i.e. (parts − 1) × quoteNative;
+QL1-origin bridges cost 0, so the extra is 0 there). The extra fee is
+converted into the destination token with the site's own quoting (best
+Infinite route 42 -> QOM, bridge 1:1, then the best QL1 route QOM ->
+destination when needed — the same method as the arb board's fee
+conversion); if conversion is impossible the split is not shown and the
+note says why. A gross win that loses after fees gets a small note with
+both numbers instead of the card; a net win shows the after-fee gain on
+the card. Measured (2026-11-06): case B (10B QOM -> QOM) gross
++79,079,974 QOM vs extra fee 3.0721 [42] ≈ 3,454,417,785 QOM -> plan
+hidden with the fee-lose note; case A (100 USDT -> QOM) net
++7,339,354,237 QOM (+4.62%); case C (1,000 USDT -> QOM) net
++391,804,254,401 QOM (+42.04%); case D (1,000 USDT -> qCAW) net
++197,759,859,443 qCAW (+46.20%). Same-chain splits are unchanged.
+
+**New in v7 — same-chain splits execute, via your own SplitSwap
+deployment:** same-chain split plans were quote-only because the
+SplitSwap aggregator contract was deployed nowhere. Now, when a chain
+has no aggregator address, the swap panel shows a "Deploy the
+aggregator" button: your wallet deploys the exact SplitSwap bytecode
+embedded in the page (published in `contracts/`), the returned address
+is verified on-chain (code present, `router()` matches the chain's DEX
+router) and saved per chain in this browser (localStorage
+`dexagg_aggregator_v1`), and split plans then execute in one
+transaction (approve -> one split call), with a built-in CHAINS address
+slot taking precedence when set. The address is shown with an explorer
+link, and a locally saved one can be cleared. The contract itself
+changed minimally: each leg now carries its own minimum output
+(leg quote minus slippage) in addition to the total minimum, and it was
+recompiled with solc 0.8.26, optimizer 200 runs, **EVM target paris** —
+QL1's EVM rejects Shanghai PUSH0 (measured: the deploy estimate failed
+with "invalid opcode: PUSH0"), so paris is required; with it, the
+deploy estimates cleanly on all three chains (≈1,210,366 gas). The
+testnet uses the same in-page deploy but needs TEST42 for gas.
+
+Honest limits: split execution needs the SplitSwap aggregator on the
+chain you use — until you deploy it from the page (once per chain, your
+own gas), same-chain splits stay quote-only there. No transaction was
+broadcast from the development environment (it holds no keys/funds);
+calldata construction/decoding round-trips, the deployment transaction
+and its gas estimate, and all state transitions are verified locally.
+The testnet router address in public records was corrupted (41 hex
+digits); the address used here was recovered by verifying every
+single-character deletion live on-chain. The testnet token list is
+built from the testnet factory's real pairs. Site root
 (English by default; Japanese at /ja.html):
 https://ql1-infinite42-guppy-histoire.github.io/dex-aggregator/
 
@@ -440,6 +534,7 @@ node probe/crosschain.cjs          # クロスチェーン見積もり（2方向
 node probe/arb.cjs                 # 価格差: 具体例 (42->QOM)・直接ブリッジ比較・ボード全行スナップショット
 node probe/fullroutes.cjs          # v5全体ルート: 1000 USDT->QL1 QOM の4例照合・全中継カバー・非ベストルートのcalldata照合
 node probe/splitcross.cjs          # v6〜v6.4クロス分割: 100 USDT の勝ちケース・10B QOM の対照 (v6.4でバリアント分割が小幅勝利に転じた所見)・1,000 USDT のケースC (1,300B 目標)・qCAW のケースD (R2パート入り)・パートcalldata照合
+node probe/splitswap.cjs           # v7: 内蔵バイトコードと contracts/ の一致・3バリアントのセレクタ/復号照合・デプロイtxの見積もり (3チェーン)
 node tools/harness.cjs             # 出荷コードを DOM スタブ上で動かす検証（JP/EN/テストネット/クロスチェーン）
 node tools/enumerate_testnet.cjs   # テストネット factory の全ペア列挙
 node tools/bridge/sample_counts.cjs    # ブリッジ各ルーターの実txメソッド集計
@@ -448,6 +543,38 @@ node tools/bridge/sample_delivery.cjs  # 実送信の messageId → 届け先 ma
 
 ## 更新履歴
 
+- **v7（2026-11-06）**: 同一チェーン分割を実際に実行できるようにした
+  （ユーザー要望「実際にtx送って取引できるようにして」）。SplitSwap は
+  未デプロイだったため、画面内デプロイを追加: チェーンに使える住所が
+  無ければ「アグリゲーターをデプロイ」ボタンが出て、自分のウォレットで
+  デプロイ → 住所を検証（コード存在＋ router() 一致）してブラウザに
+  チェーンごと保存 → 以後は分割プランを1txで実行（approve込み）。
+  内蔵住所スロット（CHAINS）があればそちら優先。表示・リンク・消去つき。
+  コントラクトは最小変更: レッグごとの最低受取量 amountOutMin を追加し、
+  solc 0.8.26 / optimizer 200 / **EVM paris** で再コンパイル（5,601
+  バイト）。QL1 の EVM が PUSH0 未対応（Shanghai 版のデプロイ見積もりが
+  "invalid opcode: PUSH0" で失敗する実測）のため paris が必須で、paris 版は
+  3チェーン全てで見積もり成功（約1,210,366 gas）。実行監査も実施:
+  他の全送信経路（同一チェーン単一、クロス単一/分割の各ステップ）の
+  spender・value・古い見積もりのみ文言を確認し、分割の approve 先を
+  有効なアグリゲーター住所に統一。検証: probe/splitswap.cjs（バイト
+  コード一致・セレクタ・3バリアント復号・デプロイ見積もり）、
+  probe/probe.cjs（ethers 復号でレッグ minOut 往復）、ハーネス（保存 →
+  実行可 → 消去で見積もりのみに戻る、デプロイ tx 復号、スワップボタン
+  有効化 JP/EN）。実送信は開発環境からは未実施（鍵・資金なし）で、
+  実利用の初回は「チェーンごとに1回デプロイ＋少額の初回取引」。
+- **v6.5（2026-11-06）**: クロスチェーン分割の表示ルールを「手数料引きで
+  勝つときだけ」に変更（ユーザー決定）。追加のブリッジ代 = プランの
+  メッセージ代合計 − 単一ベスト分（実質 (パート数−1) × quoteNative、
+  QL1 発は 0）を、サイト自身の見積もり（42→QOM 最良ルート＋ブリッジ
+  1:1＋必要なら QL1 側 QOM→宛先）で宛先トークンに換算し、差し引いても
+  勝つ場合だけカードを出す。総勝ち・手数料負けなら数字入りの注記に
+  切替え、換算不能なら安全側で出さない。実測: ケースB（10B QOM）は
+  総勝ち +79,079,974 QOM に対し追加代 ≒3,454,417,785 QOM でプラン
+  非表示（注記表示）。ケースA は手数料引き +7,339,354,237 QOM
+  （+4.62%）、ケースC は +391,804,254,401 QOM（+42.04%）、ケースD は
+  +197,759,859,443 qCAW（+46.20%）で表示。分割フロー開始にも同じ
+  ガードを追加。同一チェーン分割・単一ルート・裁定ボードは不変。
 - **v6.4（2026-11-06）**: 同一中継の扱いを「禁止」から「合算見積もり」へ。
   ユーザー指摘（宛先 qCAW の分割に USDT→FISH→QOM のルートが入らない）の
   原因だった v6.1 の構成ルール（交換2が実在する中継は1配分1パートまで）を

@@ -74,8 +74,8 @@ function decodeSwapWords(data) {
   const src = big.q.routes.length >= 2 ? big : tn1;
   const plan = {
     legs: [
-      { route: src.q.routes[0], pct: 60, amountIn: (src.amountIn * 60n) / 100n, amountOut: 0n },
-      { route: src.q.routes[1], pct: 40, amountIn: src.amountIn - (src.amountIn * 60n) / 100n, amountOut: 0n },
+      { route: src.q.routes[0], pct: 60, amountIn: (src.amountIn * 60n) / 100n, amountOut: (src.q.routes[0].amountOut * 60n) / 100n },
+      { route: src.q.routes[1], pct: 40, amountIn: src.amountIn - (src.amountIn * 60n) / 100n, amountOut: (src.q.routes[1].amountOut * 40n) / 100n },
     ],
     totalOut: src.q.routes[0].amountOut,
   };
@@ -85,8 +85,8 @@ function decodeSwapWords(data) {
   const tt = await quote("infinite", "usdt", "fish", "500");
   const planTT = {
     legs: [
-      { route: tt.q.routes[0], pct: 60, amountIn: (tt.amountIn * 60n) / 100n, amountOut: 0n },
-      { route: tt.q.routes[1], pct: 40, amountIn: tt.amountIn - (tt.amountIn * 60n) / 100n, amountOut: 0n },
+      { route: tt.q.routes[0], pct: 60, amountIn: (tt.amountIn * 60n) / 100n, amountOut: (tt.q.routes[0].amountOut * 60n) / 100n },
+      { route: tt.q.routes[1], pct: 40, amountIn: tt.amountIn - (tt.amountIn * 60n) / 100n, amountOut: (tt.q.routes[1].amountOut * 40n) / 100n },
     ],
     totalOut: tt.q.routes[0].amountOut,
   };
@@ -94,12 +94,13 @@ function decodeSwapWords(data) {
   console.log("split fn =", stx.functionName, "to =", stx.to, "minOut =", formatAmount(stx.amountOutMin, tt.t.decimals, 6), tt.t.symbol);
   const parsed = iface.parseTransaction({ data: stx.data, value: stx.value });
   console.log("復号: fn =", parsed.name, "| tokenIn =", parsed.args[0], "| legs =", parsed.args[1].length,
-    "| leg amounts =", parsed.args[1].map((l) => l[0].toString()).join(","), "| paths =", parsed.args[1].map((l) => "[" + l[1].join(",") + "]").join(" "),
+    "| leg amounts =", parsed.args[1].map((l) => l[0].toString()).join(","), "| leg minOuts =", parsed.args[1].map((l) => l[1].toString()).join(","), "| paths =", parsed.args[1].map((l) => "[" + l[2].join(",") + "]").join(" "),
     "| min =", parsed.args[2].toString(), "| tokenOut =", parsed.args[3], "| to =", parsed.args[4], "| deadline =", parsed.args[5].toString());
-  const legsOk = parsed.args[1].every((l, i) => l[0] === planTT.legs[i].amountIn && l[1].map((x) => x.toLowerCase()).join() === planTT.legs[i].route.path.join());
+  const legsOk = parsed.args[1].every((l, i) => l[0] === planTT.legs[i].amountIn && l[1] === app.applySlippageBps(planTT.legs[i].amountOut, 1) && l[2].map((x) => x.toLowerCase()).join() === planTT.legs[i].route.path.join());
+  console.log("leg minOut 往復一致:", parsed.args[1].every((l, i) => l[1] === app.applySlippageBps(planTT.legs[i].amountOut, 1)));
   console.log("legs 往復一致:", legsOk, "| 合計in 一致:", parsed.args[1].reduce((s, l) => s + l[0], 0n) === tt.amountIn);
   // native->token variant
-  const planNT = { legs: [{ route: rev.q.routes[0], pct: 100, amountIn: rev.amountIn, amountOut: 0n }], totalOut: rev.q.routes[0].amountOut };
+  const planNT = { legs: [{ route: rev.q.routes[0], pct: 100, amountIn: rev.amountIn, amountOut: rev.q.routes[0].amountOut }], totalOut: rev.q.routes[0].amountOut };
   const ntx = app.buildSplitTx(chainForSplit, rev.f, rev.t, planNT, acct, 1, 1700000000);
   const parsedN = iface.parseTransaction({ data: ntx.data, value: ntx.value });
   console.log("fromNative 復号: fn =", parsedN.name, "| value =", ntx.value.toString(), "| legs =", parsedN.args[0].length, "| min =", parsedN.args[1].toString());

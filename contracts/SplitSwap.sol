@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: MIT
+// ビルド設定: solc 0.8.26 / optimizer 200 runs / EVM ターゲット = paris。
+// QL1 の EVM は Shanghai の PUSH0 命令に未対応 (デプロイ見積もりで
+// "invalid opcode: PUSH0" になる) ため、paris ターゲットが必須。
 pragma solidity ^0.8.20;
 
 /// @title SplitSwap — 最小の分割スワップ・アグリゲーター
@@ -26,8 +29,9 @@ contract SplitSwap {
     IV2Router public immutable router;
 
     struct Leg {
-        uint256 amountIn;   // このレッグに配分する入力量（最小単位）
-        address[] path;     // ルーターに渡すパス
+        uint256 amountIn;     // このレッグに配分する入力量（最小単位）
+        uint256 amountOutMin; // このレッグ単独の最低受取量 (0 = レッグ単独の指定なし。合計の最低量は別途チェック)
+        address[] path;       // ルーターに渡すパス
     }
 
     event SplitSwapExecuted(address indexed user, address indexed tokenIn, address indexed tokenOut, uint256 amountInTotal, uint256 amountOutTotal, uint8 legs);
@@ -62,7 +66,7 @@ contract SplitSwap {
         for (uint256 i = 0; i < legs.length; i++) {
             require(IERC20(tokenIn).approve(address(router), 0), "approve0 failed");
             require(IERC20(tokenIn).approve(address(router), legs[i].amountIn), "approve failed");
-            uint256[] memory amounts = router.swapExactTokensForTokens(legs[i].amountIn, 0, legs[i].path, to, deadline);
+            uint256[] memory amounts = router.swapExactTokensForTokens(legs[i].amountIn, legs[i].amountOutMin, legs[i].path, to, deadline);
             amountOutTotal += amounts[amounts.length - 1];
         }
         // ルーターの返り値と実残高差分の両方で最低量を確認する
@@ -86,7 +90,7 @@ contract SplitSwap {
         for (uint256 i = 0; i < legs.length; i++) {
             require(IERC20(tokenIn).approve(address(router), 0), "approve0 failed");
             require(IERC20(tokenIn).approve(address(router), legs[i].amountIn), "approve failed");
-            uint256[] memory amounts = router.swapExactTokensForETH(legs[i].amountIn, 0, legs[i].path, to, deadline);
+            uint256[] memory amounts = router.swapExactTokensForETH(legs[i].amountIn, legs[i].amountOutMin, legs[i].path, to, deadline);
             amountOutTotal += amounts[amounts.length - 1];
         }
         require(to.balance - balBefore >= amountOutMinTotal, "amountOut < min");
@@ -105,7 +109,7 @@ contract SplitSwap {
         require(msg.value == totalIn, "msg.value != sum(legs)");
         uint256 balBefore = IERC20(tokenOut).balanceOf(to);
         for (uint256 i = 0; i < legs.length; i++) {
-            uint256[] memory amounts = router.swapExactETHForTokens{value: legs[i].amountIn}(0, legs[i].path, to, deadline);
+            uint256[] memory amounts = router.swapExactETHForTokens{value: legs[i].amountIn}(legs[i].amountOutMin, legs[i].path, to, deadline);
             amountOutTotal += amounts[amounts.length - 1];
         }
         require(IERC20(tokenOut).balanceOf(to) - balBefore >= amountOutMinTotal, "amountOut < min");
