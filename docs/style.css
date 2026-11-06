@@ -41,3 +41,25 @@ button.big.swap { background: #1d9e62; }
 .notes { color: #c3cad7; line-height: 1.7; font-size: 13px; padding-left: 18px; margin: 0; }
 .notes code { background: #0f1420; padding: 1px 5px; border-radius: 4px; }
 footer { max-width: 760px; margin: 0 auto; padding: 4px 16px 28px; color: #8d99ae; font-size: 12px; line-height: 1.6; }
+
+/* ---- v2 additions ---- */
+.lang-switch { margin-left: 10px; }
+.lang-switch a { color: #8fd0ff; font-size: 13px; }
+.testnet-banner { max-width: 760px; width: calc(100% - 24px); margin: 12px auto 0; background: #6b5410; border: 1px solid #c9a227; color: #ffe9a8; border-radius: 10px; padding: 10px 14px; font-size: 14px; font-weight: 700; text-align: center; }
+.pay-box { background: #10182b; border: 1px solid #2b3857; border-radius: 12px; padding: 12px; margin-top: 10px; }
+.pay-box.receive { background: #12241f; border-color: #24503f; }
+.pay-label { font-size: 12px; color: #9fb0c9; margin-bottom: 8px; }
+.pay-row { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; }
+.pay-row select { flex: 1 1 150px; padding: 12px; font-size: 15px; border-radius: 10px; border: 1px solid #33405e; background: #0f1420; color: #fff; min-width: 0; }
+.pay-row input { flex: 2 1 160px; padding: 12px; font-size: 22px; font-weight: 700; text-align: right; border-radius: 10px; border: 1px solid #33405e; background: #0f1420; color: #fff; min-width: 0; }
+.receive-out { flex: 2 1 160px; padding: 12px; font-size: 22px; font-weight: 700; text-align: right; border-radius: 10px; border: 1px solid #24503f; background: #0d1a16; color: #b9f4d8; min-width: 0; word-break: break-all; }
+.rate-row { font-size: 13px; color: #c3cad7; margin: 8px 0 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.mini-btn { background: #232c44; color: #c3cad7; padding: 4px 10px; font-size: 12px; border-radius: 6px; }
+.split-card { margin-top: 12px; }
+.split-leg { display: block; margin-top: 8px; }
+.split-leg-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.pct-chip { background: #2470d8; color: #fff; border-radius: 6px; padding: 2px 8px; font-size: 12px; font-weight: 700; flex: 0 0 auto; }
+.split-path { font-size: 12.5px; color: #e8ecf3; word-break: break-all; }
+.split-leg-out { font-size: 12.5px; color: #8fd0a8; margin-left: auto; }
+.split-bar { display: block; height: 8px; background: #0f1420; border-radius: 4px; margin-top: 4px; overflow: hidden; }
+.split-bar-fill { display: block; height: 100%; background: linear-gradient(90deg, #2470d8, #1d9e62); border-radius: 4px; }

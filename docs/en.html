@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DEX Aggregator (42 Chain / QL1 / 42 Testnet)</title>
+<meta name="description" content="Compare direct, multi-hop and split routes across all pools on 42 Chain (Infinite), QL1 and the 42 testnet, and swap along the plan that gives you the most.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>DEX Aggregator (42 Chain / QL1 / Testnet)</h1>
+  <p class="sub">Finds the route that gives you the most, across every pool. <span class="lang-switch"><a href="index.html">日本語</a></span></p>
+  <p class="sub small">A "route" is the path a swap takes. For example, USDT → 42 can go directly, or via another token like USDT → FISH → 42, and which one gives more depends on the amount. This site quotes every path — including "splits" that divide your amount across several routes — and ranks them, the same idea as 1inch.</p>
+</header>
+
+<div id="testnetBanner" class="testnet-banner" style="display:none">⚠ Testnet (TEST42) — this is not real money</div>
+
+<section class="panel">
+  <h2>Chain</h2>
+  <div class="chain-row">
+    <button id="chainInf" type="button" class="chain-btn active">42 Chain</button>
+    <button id="chainQl1" type="button" class="chain-btn">QL1</button>
+    <button id="chainTest" type="button" class="chain-btn">42 Testnet</button>
+  </div>
+  <p id="chainNote" class="count"></p>
+  <div class="connect-row">
+    <button id="connectBtn" type="button">Connect wallet (MetaMask)</button>
+    <span id="accountLine" class="count">Not connected (quotes work without a wallet)</span>
+  </div>
+  <p id="status" class="status"></p>
+</section>
+
+<section class="panel swap-panel">
+  <h2>Swap</h2>
+
+  <div class="pay-box">
+    <div class="pay-label">You pay</div>
+    <div class="pay-row">
+      <select id="fromToken" aria-label="Token you pay"></select>
+      <input id="amountIn" type="text" inputmode="decimal" autocomplete="off" placeholder="0.0" aria-label="Amount">
+    </div>
+    <p id="fromBalance" class="count"></p>
+    <div class="chips">
+      <button type="button" class="chip" data-pct="25">25%</button>
+      <button type="button" class="chip" data-pct="50">50%</button>
+      <button type="button" class="chip" data-pct="75">75%</button>
+      <button type="button" class="chip" data-pct="MAX">MAX</button>
+    </div>
+    <p class="count">For the native currency (42 / QOM / TEST42), MAX keeps 0.01 aside for gas. For tokens it uses the full balance.</p>
+  </div>
+
+  <div class="flip-row"><button id="flipBtn" type="button" aria-label="Flip tokens">↓↑ Flip</button></div>
+
+  <div class="pay-box receive">
+    <div class="pay-label">You receive (estimated)</div>
+    <div class="pay-row">
+      <select id="toToken" aria-label="Token you receive"></select>
+      <div id="receiveOut" class="receive-out">0.0</div>
+    </div>
+    <p id="toBalance" class="count"></p>
+    <p class="rate-row"><span id="rateLine"></span> <button id="rateInvertBtn" type="button" class="mini-btn" title="Invert rate">⇄ Invert</button></p>
+    <p id="gasLine" class="count"></p>
+  </div>
+
+  <div class="slip">
+    <div class="slip-label">Slippage (how much price movement you accept)</div>
+    <p class="count">If the real price ends up worse than your quote by more than this, the transaction fails automatically to protect you.</p>
+    <div class="slip-row">
+      <button type="button" class="slip-btn" data-val="0.5">0.5%</button>
+      <button type="button" class="slip-btn active" data-val="1">1%</button>
+      <button type="button" class="slip-btn" data-val="3">3%</button>
+      <input id="slipCustom" type="text" inputmode="decimal" placeholder="Custom (%)">
+    </div>
+  </div>
+
+  <button id="quoteBtn" type="button" class="big">Compare routes</button>
+  <div id="planArea"></div>
+  <div id="routeList" class="route-list"></div>
+  <p id="splitNote" class="split-note"></p>
+  <p id="minLine" class="count"></p>
+  <button id="swapBtn" type="button" class="big swap" disabled>Swap with this route</button>
+  <p id="txResult" class="status"></p>
+  <p class="count">Swaps are sent with a 20-minute deadline. The first time you use a token, your wallet will ask for a spending approval. Gas figures are estimates.</p>
+</section>
+
+<section class="panel">
+  <h2>Add a token by contract address</h2>
+  <p class="count">If a token is not in the list, paste its contract address (CA) and it will be read from the chain and added. Added tokens are saved in this browser.</p>
+  <div class="ca-row">
+    <input id="caInput" type="text" placeholder="0x… (a token on the selected chain)" autocomplete="off" spellcheck="false">
+    <button id="caAddBtn" type="button">Add</button>
+  </div>
+  <p id="caMsg" class="status"></p>
+</section>
+
+<section class="panel">
+  <h2>How it works — and honest limits</h2>
+  <ul class="notes">
+    <li>Quotes are real: the site calls the DEX router's <code>getAmountsOut</code> for every candidate route (direct, 1 hop, 2 hops). Nothing is guessed from a price feed.</li>
+    <li>Splits across the top routes (90/10, 80/20, …, 50/50, and 3-way splits) are quoted the same way. When a split beats every single route, it is shown as the recommended "Split plan".</li>
+    <li><b>Executing a split needs a dedicated aggregator contract.</b> The contract (SplitSwap) is included in this site's repository, but it is not deployed on 42 Chain / QL1 mainnet yet, so on mainnet a split is a <b>quote only</b> and execution uses a single route. It is also not deployed on the testnet yet (no public TEST42 faucet could be found to pay for deployment gas). Once deployed, the split button on this site works as-is.</li>
+    <li>The testnet DEX router address in public records had one character too many; this site uses the address recovered by verifying every candidate live on-chain. The testnet token list is built from the testnet's real pairs.</li>
+    <li>"Price impact" is the difference between a no-fee estimate from pool reserves and the real quote (fees + size impact). Gas figures are estimates too.</li>
+    <li>Small pools can move between quote and execution. Try a small amount first before swapping a large one.</li>
+    <li>This site takes no fee. Swaps talk directly to each chain's DEX router (42 Chain: Don't Panic / QL1: QomSwap).</li>
+  </ul>
+</section>
+
+<footer>
+  <p>v2 / Data: 42 Chain RPC / QL1 RPC / 42 Testnet RPC (read directly from the pools). Source code is published under the MIT license.</p>
+</footer>
+<script src="app.js"></script>
+</body>
+</html>
