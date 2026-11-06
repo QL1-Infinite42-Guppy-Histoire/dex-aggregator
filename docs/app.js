@@ -85,6 +85,9 @@ const STR = {
     xStep4IdentityBtn: "完了にする（交換なし）",
     xSplitStartBtn: "この分割プランではじめる",
     xSplitWinNote: "分割プランが単一ルートより多くなりました。",
+    xSplitNetWin: (pct, amt, sym) => "追加のブリッジ代を引いても、単一ベストより +" + pct + "%（+" + amt + " " + sym + "）",
+    xSplitFeeLose: (gain, fee, sym) => "分割も比べました。単一ベストより " + gain + " " + sym + " 多くなりますが、追加のブリッジ代（約 " + fee + " " + sym + " 相当）の方が大きいため、手数料引きでは負けます。今回は単一ルートがいちばんです。",
+    xSplitFeeConvFail: "分割も比べましたが、追加のブリッジ代を受け取りトークンに換算できなかったため、安全側で単一ルートを表示しています。",
     xSplitFeeTotalInf: (amt, n) => "ブリッジのメッセージ代の合計: 約 " + amt + " [42]（ブリッジ " + n + " 回分、それぞれにかかります）",
     xSplitFeeQl1: "ブリッジのメッセージ代は、パートごとに分けても 0 です（実測: QL1側の送信は全て支払い0でした）",
     xSplitPartsNote: (n) => "交換とブリッジはパートごとに分かれて、それぞれ " + n + " 回ずつ行います（まとめて1回では送りません）",
@@ -199,6 +202,9 @@ const STR = {
     xStep4IdentityBtn: "Finish (no swap)",
     xSplitStartBtn: "Start with this split plan",
     xSplitWinNote: "A split plan beats the best single full route.",
+    xSplitNetWin: (pct, amt, sym) => "After the extra bridge cost, still +" + pct + "% vs the best single route (+" + amt + " " + sym + ")",
+    xSplitFeeLose: (gain, fee, sym) => "A split was compared too. It would add " + gain + " " + sym + " over the best single route, but the extra bridge cost (approx. " + fee + " " + sym + ") is larger, so it loses after fees. A single route is best this time.",
+    xSplitFeeConvFail: "A split was compared too, but the extra bridge cost could not be converted into the received token, so a single route is shown to be safe.",
     xSplitFeeTotalInf: (amt, n) => "Total bridge messaging cost: approx. " + amt + " [42] (" + n + " bridge sends, charged per send)",
     xSplitFeeQl1: "The bridge messaging cost stays 0 per part (measured: every sampled QL1 send paid 0)",
     xSplitPartsNote: (n) => "Swaps and bridges run separately for each part (" + n + " of each — they are not sent as one transaction)",
@@ -407,6 +413,7 @@ const state = {
   xPollTimer: null,
   xBenchmark: null,      // v4: {sym, kind, finalOut} benchmark of the last cross quote
   xSplit: null,          // v6: {evaluated, best, plan, bestSingle} cross-chain split evaluation
+  xSplitNet: null,       // v6.5: {shown, gain, extraFeeNative, extraFeeDest, netGain, netPct, convFailed} net-of-fees verdict for the split plan
   arbRows: [],           // v4: last arbitrage board scan rows
   arbStartRaw: null,     // v4: start amount (QOM raw) of the last board scan
 };
@@ -1326,6 +1333,43 @@ async function evaluateCrossSplit(srcKey, dstKey, amountIn, cands) {
   return { evaluated, best, plan, bestSingle, refineStats: { partQuotes: quoter.stats.partQuotes, leg2Quotes: quoter.stats.leg2Quotes, batches: quoter.stats.batches, iterations: refineInfo.iterations, ms: Date.now() - t0 } };
 }
 
+/* ---------- v6.5: net-of-fees verdict for a cross-chain split plan ----------
+   ユーザー決定 (2026-11-06): クロスチェーン分割プランは「追加のブリッジ
+   メッセージ代を引いても単一ベストに勝つときだけ」カードとして出す。
+   - 追加代 = プランの全パートの nativeFee 合計 − 単一ベスト全体ルートの
+     nativeFee。quoteNative がペアごとに等しい場合は (パート数 − 1) ×
+     quoteNative と一致する。QL1 発は実測で全パート 0 なので追加代は 0。
+   - 換算はこのサイト自身の見積もり機構だけを使う: [42] の追加代を
+     Infinite の最良ルートで QOM に替え (fetchBestRoute)、その QOM は
+     ブリッジ 1:1 で QL1 の QOM になるので、宛先トークンが QOM 以外なら
+     QL1 の最良ルートでもう一度替える。裁定ボードの手数料換算と同じ考え方。
+   - 換算できなかった場合は、安全側でプランを出さない (convFailed)。
+   DEX ガスは従来どおり含めない (カードにも明示する)。 */
+async function evaluateCrossSplitNet(srcKey, dstKey, toTok, xs) {
+  if (!xs || !xs.plan || !xs.bestSingle || !toTok) return null;
+  const gain = xs.plan.totalOut - xs.bestSingle.finalOut;
+  const planFee = xs.plan.parts.reduce((s, p) => s + (p.cand.nativeFee || 0n), 0n);
+  const singleFee = xs.bestSingle.nativeFee || 0n;
+  const extraFeeNative = planFee > singleFee ? planFee - singleFee : 0n;
+  const pctOf = (net) => xs.bestSingle.finalOut > 0n ? (Number(net) / Number(xs.bestSingle.finalOut)) * 100 : 0;
+  if (extraFeeNative <= 0n) return { shown: true, gain, extraFeeNative, extraFeeDest: 0n, netGain: gain, netPct: pctOf(gain), convFailed: false };
+  let extraFeeDest = null;
+  try {
+    const conv1 = await fetchBestRoute(CHAINS.infinite, tokenById("infinite", "native"), tokenById("infinite", "qom"), extraFeeNative);
+    if (conv1 && conv1.amountOut > 0n) {
+      if (toTok.id === "native" || toTok.id === "wqom") {
+        extraFeeDest = conv1.amountOut; // QOM bridges 1:1, so Infinite-side QOM == QL1-side QOM amount
+      } else {
+        const conv2 = await fetchBestRoute(CHAINS.ql1, tokenById("ql1", "wqom"), toTok, conv1.amountOut);
+        if (conv2 && conv2.amountOut > 0n) extraFeeDest = conv2.amountOut;
+      }
+    }
+  } catch (e) { extraFeeDest = null; }
+  if (extraFeeDest == null) return { shown: false, gain, extraFeeNative, extraFeeDest: null, netGain: null, netPct: null, convFailed: true };
+  const netGain = gain - extraFeeDest;
+  return { shown: netGain > 0n, gain, extraFeeNative, extraFeeDest, netGain, netPct: pctOf(netGain), convFailed: false };
+}
+
 /* ---------- v6: split-flow arrival attribution (pure; harness-tested) ----------
    同じ中継トークンのパートが複数ある場合、到着分はパートの順番どおりに
    「そのパートがブリッジした見込み量」まで割り当てる。最後のパートだけは、
@@ -1807,7 +1851,7 @@ function setXSrc(srcKey) {
   if ($("xSrcQl1")) $("xSrcQl1").classList.toggle("active", srcKey === "ql1");
   if ($("xDstLabel")) $("xDstLabel").textContent = CHAINS[xDstKey()].label;
   fillXSelects();
-  state.xCandidates = []; state.xQuote = null; state.xBenchmark = null; state.xSplit = null;
+  state.xCandidates = []; state.xQuote = null; state.xBenchmark = null; state.xSplit = null; state.xSplitNet = null;
   if ($("xCandidates")) $("xCandidates").innerHTML = "";
   setChain(srcKey);
   refreshXBalance();
@@ -1855,11 +1899,15 @@ async function onXQuote() {
     state.xQuote = { fromId: f.id, toId: tk.id, amountIn: amountIn.toString() };
     state.xSplit = null;
     try { state.xSplit = await evaluateCrossSplit(state.xSrc, xDstKey(), amountIn, cands); } catch (e) { state.xSplit = null; /* splits are optional */ }
+    state.xSplitNet = null;
+    if (state.xSplit && state.xSplit.plan) {
+      try { state.xSplitNet = await evaluateCrossSplitNet(state.xSrc, xDstKey(), tk, state.xSplit); } catch (e) { state.xSplitNet = null; }
+    }
     renderXCandidates();
     const best = cands.find((c) => c.enabled);
     if (best) {
       let msg = t("xQuoted", cands.filter((c) => c.enabled).length, best.pair.sym, formatAmount(best.finalOut, tk.decimals, 6), tk.symbol);
-      if (state.xSplit && state.xSplit.plan) msg += t("xSplitWinNote");
+      if (state.xSplit && state.xSplit.plan && state.xSplitNet && state.xSplitNet.shown) msg += t("xSplitWinNote");
       setXStatus(msg);
     }
     else setXStatus(t("xNoCandidate"), true);
@@ -1899,11 +1947,17 @@ function renderXCandidates() {
   const toTok = state.xQuote ? tokenById(xDstKey(), state.xQuote.toId) : null;
   const fromTok = state.xQuote ? tokenById(state.xSrc, state.xQuote.fromId) : null;
   if (!toTok || !fromTok) { list.innerHTML = ""; return; }
-  /* v6: split plan card (only when a split actually beats the best single
-     full route; when splits were evaluated but lost, a small honest note). */
+  /* v6: split plan card. v6.5: the card is shown ONLY when the split still
+     beats the best single full route after the extra bridge messaging cost
+     (evaluateCrossSplitNet). A gross win that loses after fees — or whose
+     fee could not be converted — gets a small honest note with numbers
+     instead of the card. When splits were evaluated but lost outright,
+     the older small note is shown. */
   let splitHtml = "";
   const xs = state.xSplit;
-  if (xs && xs.plan) {
+  const net = state.xSplitNet;
+  const planShown = !!(xs && xs.plan && net && net.shown);
+  if (planShown) {
     const plan = xs.plan;
     const diff = xs.bestSingle && xs.bestSingle.finalOut > 0n ? (Number(plan.totalOut - xs.bestSingle.finalOut) / Number(xs.bestSingle.finalOut)) * 100 : 0;
     const partsHtml = plan.parts.map((p) =>
@@ -1915,14 +1969,20 @@ function renderXCandidates() {
     const feeLine = state.xSrc === "infinite"
       ? '<span class="r-line">' + esc(t("xSplitFeeTotalInf", formatAmount(plan.parts.reduce((s, p) => s + (p.cand.nativeFee || 0n), 0n), 18, 4), plan.parts.length)) + "</span>"
       : '<span class="r-line">' + esc(t("xSplitFeeQl1")) + "</span>";
+    const netLine = '<span class="r-line">' + esc(t("xSplitNetWin", net.netPct.toFixed(2), formatAmount(net.netGain, toTok.decimals, 6), toTok.symbol)) + "</span>";
     splitHtml = '<div class="route-card split-card">' +
       '<span class="r-head"><span class="r-rank">' + esc(t("planSplitTitle")) + '</span><span class="badge best">' + esc(t("badgeRecommended")) + '</span>' +
       '<span class="r-out">' + formatAmount(plan.totalOut, toTok.decimals, 6) + " " + esc(toTok.symbol) + '</span></span>' +
-      '<span class="r-line">' + esc(t("splitVsSingle", diff.toFixed(2))) + "</span>" +
+      '<span class="r-line">' + esc(t("splitVsSingle", diff.toFixed(2))) + "</span>" + netLine +
       partsHtml + feeLine +
       '<span class="r-line">' + esc(t("xSplitPartsNote", plan.parts.length)) + "</span>" +
       '<button type="button" class="x-start x-split-start">' + esc(t("xSplitStartBtn")) + "</button></div>";
   }
+  const feeLoseNote = xs && xs.plan && net && !net.shown
+    ? '<p class="count">' + esc(net.convFailed
+      ? t("xSplitFeeConvFail")
+      : t("xSplitFeeLose", formatAmount(net.gain, toTok.decimals, 6), formatAmount(net.extraFeeDest, toTok.decimals, 6), toTok.symbol)) + "</p>"
+    : "";
   const splitLostNote = xs && !xs.plan && xs.best
     ? '<p class="count">' + esc(t("splitLost", formatAmount(xs.best.totalOut, toTok.decimals, 6), toTok.symbol)) + "</p>"
     : "";
@@ -1955,7 +2015,7 @@ function renderXCandidates() {
       '<span class="r-line">' + esc(t("xFinalEst")) + ": " + formatAmount(c.finalOut, toTok.decimals, 6) + " " + esc(toTok.symbol) + " ／ " + esc(t("routeHops", hops)) + "</span>" +
       benchHtml +
       '<button type="button" class="x-start" data-idx="' + i + '">' + esc(t("xStartBtn")) + "</button></div>";
-  }).join("") + splitLostNote + '<p class="count">' + esc(t("xEstNote")) + "</p>";
+  }).join("") + feeLoseNote + splitLostNote + '<p class="count">' + esc(t("xEstNote")) + "</p>";
   list.querySelectorAll(".x-start").forEach((el) => { if (el.classList && el.classList.contains("x-split-start")) return; el.addEventListener("click", () => startXFlow(state.xCandidates[Number(el.dataset.idx)])); });
   list.querySelectorAll(".x-split-start").forEach((el) => el.addEventListener("click", () => startXSplitFlow()));
 }
@@ -1998,6 +2058,15 @@ async function startXSplitFlow() {
   if (!state.account) { setXStatus(t("xNeedConnect"), true); return; }
   const xs = state.xSplit;
   if (!xs || !xs.plan || !state.xQuote) return;
+  // v6.5: a plan that loses after bridge fees is never started (its card is
+  // not rendered either; this guards programmatic calls).
+  if (state.xSplitNet && !state.xSplitNet.shown) {
+    const toTok = tokenById(xDstKey(), state.xQuote.toId);
+    setXStatus(state.xSplitNet.convFailed || !toTok
+      ? t("xSplitFeeConvFail")
+      : t("xSplitFeeLose", formatAmount(state.xSplitNet.gain, toTok.decimals, 6), formatAmount(state.xSplitNet.extraFeeDest, toTok.decimals, 6), toTok.symbol), true);
+    return;
+  }
   const plan = xs.plan;
   const parts = plan.parts.map((p, i) => ({
     idx: i, pct: p.pct, sym: p.cand.pair.sym, tSrcId: p.cand.tSrc.id, tDstId: p.cand.tDst.id,
@@ -2699,7 +2768,7 @@ function initApp() {
   if ($("arbScanBtn")) $("arbScanBtn").addEventListener("click", onArbScan);
   document.querySelectorAll(".arb-chip").forEach((el) => el.addEventListener("click", () => { if ($("arbAmount")) $("arbAmount").value = el.dataset.amt; }));
   if ($("xAbandon")) $("xAbandon").addEventListener("click", onXAbandon);
-  for (const id of ["xFromToken", "xToToken"]) if ($(id)) $(id).addEventListener("change", () => { state.xCandidates = []; state.xQuote = null; state.xSplit = null; if ($("xCandidates")) $("xCandidates").innerHTML = ""; refreshXBalance(); });
+  for (const id of ["xFromToken", "xToToken"]) if ($(id)) $(id).addEventListener("change", () => { state.xCandidates = []; state.xQuote = null; state.xSplit = null; state.xSplitNet = null; if ($("xCandidates")) $("xCandidates").innerHTML = ""; refreshXBalance(); });
   loadXFlow();
   setChain("infinite");
   renderBalances();
@@ -2711,6 +2780,7 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = { CHAINS, STR, LANG, state, parseAmount, formatAmount, formatRate, formatGas, encAddr, encUint, encLegsTail, encodeGetAmountsOut, decodeAmountsOut, buildCandidatePaths, fetchQuotesForTokens, evaluateSplits, buildSwapTx, buildApproveTx, buildSplitTx, applySlippageBps, fetchTokenMeta, tokenById, allTokens, symbolFor, onQuote, onCaAdd, selectRoute, selectSplit, selectedRoute, setChain, estimateGasUnitsSingle, estimateGasUnitsSplit, splitExecutable,
     BRIDGE_PAIRS, BRIDGE_MAILBOX, bridgePairBySym, fetchBestRoute, fetchRoutesOnly, attachImpactsMulti, buildBridgeTx, decodeBridgeTxData, encodeRecipient32, fetchBridgeNativeQuote, fetchBridgeDelivered, readTokenBalance, extractMessageId, quoteCrossPlan, requotePathExact, serializeXFlow, restoreXFlow, saveXFlow, loadXFlow, setMode, setXSrc, xDstKey, onXQuote, renderXCandidates, startXFlow, renderXFlow, checkArrival, doXStep1, doXStep4, doXStep4Legacy, onXAbandon,
     evaluateCrossSplit, crossSplitPool, requoteSplitPart, makeCrossSplitQuoter, refineSplitAllocation, leg2GroupKey, combineLeg2Groups, distributeCombinedOut, attributeSplitArrivals, crossSplitPhase, startXSplitFlow, renderXSplitFlow, checkSplitArrival, doXSplitStep1, doXSplitStep2, doXSplitStep4,
+    evaluateCrossSplitNet,
     qomTokenId, fetchBridgeFeeInQom, quoteArbRoute, quoteArbBoard, renderArbBoard, onArbScan, startArbFlow, startReturnFlow,
     langTargetFor, initLangSelector };
 }

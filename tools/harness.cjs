@@ -238,6 +238,8 @@ function loadPage(lang, seedStore) {
   const xs6 = jp6.app.state.xSplit;
   console.log("\n[V6-JP] split evaluated:", xs6 && xs6.evaluated, "| best single:", xs6 && jp6.app.formatAmount(xs6.bestSingle.finalOut, 18, 2), "| best split:", xs6 && xs6.best && jp6.app.formatAmount(xs6.best.totalOut, 18, 2), "| plan:", !!(xs6 && xs6.plan));
   console.log("[V6-JP] plan beats single:", !!(xs6 && xs6.plan && xs6.plan.totalOut > xs6.bestSingle.finalOut), "| split card html:", jp6.els.xCandidates.innerHTML.includes("分割プラン") && jp6.els.xCandidates.innerHTML.includes("この分割プランではじめる"), "| fee total line:", jp6.els.xCandidates.innerHTML.includes("メッセージ代の合計"), "| parts-separate note:", jp6.els.xCandidates.innerHTML.includes("パートごとに分かれて"));
+  const net6 = jp6.app.state.xSplitNet;
+  console.log("[V6.5-JP caseA] net verdict: shown:", net6 && net6.shown, "| convFailed:", net6 && net6.convFailed, "| gross gain:", net6 && jp6.app.formatAmount(net6.gain, 18, 2), "QOM | extra fee in dest terms:", net6 && jp6.app.formatAmount(net6.extraFeeDest, 18, 2), "QOM | net gain:", net6 && jp6.app.formatAmount(net6.netGain, 18, 2), "| net line on card:", jp6.els.xCandidates.innerHTML.includes("追加のブリッジ代を引いても"));
   if (xs6 && xs6.plan) {
     console.log("[V6-JP] plan parts:", xs6.plan.parts.map((p) => p.pct + "%:" + p.cand.pair.sym).join(" + "), "| vs single:", ((Number(xs6.plan.totalOut) / Number(xs6.bestSingle.finalOut) - 1) * 100).toFixed(2) + "%");
     await jp6.app.startXSplitFlow();
@@ -265,6 +267,8 @@ function loadPage(lang, seedStore) {
   await jp6c.app.onXQuote();
   const xsB = jp6c.app.state.xSplit;
   console.log("[V6-JP caseB] 10B QOM: best single via:", jp6c.app.state.xCandidates.find((c) => c.enabled).pair.sym, "| best split vs single:", xsB && xsB.best ? ((Number(xsB.best.totalOut) / Number(xsB.bestSingle.finalOut) - 1) * 100).toFixed(2) + "%" : null, "| plan (v6.4: BABY-variant split now wins slightly — see v6.4 finding):", !!(xsB && xsB.plan), "| split card shown:", jp6c.els.xCandidates.innerHTML.includes("分割プラン"));
+  const netB = jp6c.app.state.xSplitNet;
+  console.log("[V6.5-JP caseB] net verdict (gross win, fee loss): shown:", netB && netB.shown, "| convFailed:", netB && netB.convFailed, "| gross gain:", netB && jp6c.app.formatAmount(netB.gain, 18, 2), "QOM | extra fee in dest terms:", netB && jp6c.app.formatAmount(netB.extraFeeDest, 18, 2), "QOM | fee > gain:", !!(netB && netB.extraFeeDest > netB.gain), "| fee-lose note shown:", jp6c.els.xCandidates.innerHTML.includes("手数料引きでは負けます"), "| split card NOT shown:", !jp6c.els.xCandidates.innerHTML.includes("分割プラン"));
 
   // ---- v6.1: case C (1,000 USDT) — same-intermediate (QOM) path variants in one split plan ----
   const jp61 = loadPage("ja", {});
@@ -280,6 +284,8 @@ function loadPage(lang, seedStore) {
     p.cand.leg1Path[0].toLowerCase() === usdtA && p.cand.leg1Path[1].toLowerCase() === fishA && p.cand.leg1Path[2].toLowerCase() === qomA;
   console.log("\n[V6.1-JP caseC] plan:", !!(xsC && xsC.plan), "| total:", xsC && xsC.plan && jp61.app.formatAmount(xsC.plan.totalOut, 18, 2), "QOM | >= 1,270B:", !!(xsC && xsC.plan && xsC.plan.totalOut >= 1270n * 10n ** 27n), "| vs single:", xsC && xsC.plan ? ((Number(xsC.plan.totalOut) / Number(xsC.bestSingle.finalOut) - 1) * 100).toFixed(2) + "%" : null);
   console.log("[V6.1-JP caseC] plan includes R2 part (leg1 USDT->FISH->QOM):", !!(xsC && xsC.plan && xsC.plan.parts.some(isR2Part)), "| parts:", xsC && xsC.plan && xsC.plan.parts.map((p) => p.pct + "%:" + p.cand.pair.sym).join(" + "));
+  const netC = jp61.app.state.xSplitNet;
+  console.log("[V6.5-JP caseC] net verdict: shown:", netC && netC.shown, "| net gain:", netC && jp61.app.formatAmount(netC.netGain, 18, 2), "QOM | netPct:", netC && netC.netPct.toFixed(2) + "%", "| net line on card:", jp61.els.xCandidates.innerHTML.includes("追加のブリッジ代を引いても"));
   if (xsC && xsC.plan) {
     await jp61.app.startXSplitFlow();
     const sfC = jp61.app.state.xflow;
@@ -427,6 +433,9 @@ function loadPage(lang, seedStore) {
   await en64.app.onXQuote();
   const xsDE = en64.app.state.xSplit;
   console.log("[V6.4-EN caseD] plan:", !!(xsDE && xsDE.plan), "| includes R2 part:", !!(xsDE && xsDE.plan && xsDE.plan.parts.some(isR2PartD)));
+  const netD = jp64.app.state.xSplitNet, netDE = en64.app.state.xSplitNet;
+  console.log("[V6.5-JP caseD] net verdict: shown:", netD && netD.shown, "| net gain:", netD && jp64.app.formatAmount(netD.netGain, 18, 2), "qCAW | extra fee in dest terms:", netD && jp64.app.formatAmount(netD.extraFeeDest, 18, 2), "qCAW");
+  console.log("[V6.5-EN caseD] net verdict: shown:", netDE && netDE.shown, "| net line on card (EN):", en64.els.xCandidates.innerHTML.includes("After the extra bridge cost"));
 
   console.log("\nHARNESS DONE");
 })().catch((e) => { console.error("HARNESS FAILED:", e); process.exit(1); });

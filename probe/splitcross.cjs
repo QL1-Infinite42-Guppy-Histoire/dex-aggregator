@@ -157,4 +157,23 @@ const refDiff = (raw, refFloat) => ((F18(raw) / refFloat - 1) * 100).toFixed(2) 
   } else console.log("  leg1 のあるパートが無いためスキップ");
 
   console.log("\nSPLITCROSS PROBE DONE");
+  /* ---- v6.5: 手数料引き (net-of-fees) 判定 — ケースA/B/C/D ---- */
+  console.log("\n=== v6.5 手数料引き判定 (evaluateCrossSplitNet) ===");
+  const fmt = (v, tk) => app.formatAmount(v, tk.decimals, 4);
+  const netCase = async (label, xs, dstTok, sym) => {
+    if (!xs || !xs.plan) { console.log(label + ": plan なし (分割自体が負け) — net 判定なし"); return null; }
+    const net = await app.evaluateCrossSplitNet("infinite", "ql1", dstTok, xs);
+    console.log(label + ": 総勝ち +" + fmt(xs.plan.totalOut - xs.bestSingle.finalOut, dstTok) + " " + sym + " -> shown:", net && net.shown,
+      "| convFailed:", net && net.convFailed,
+      "| 追加代:", net && net.extraFeeNative != null ? fmt(net.extraFeeNative, app.tokenById("infinite", "native")) + " [42]" : "-",
+      "| 宛先換算:", net && net.extraFeeDest != null ? fmt(net.extraFeeDest, dstTok) + " " + sym : "-",
+      "| 手数料引き:", net && net.netGain != null ? fmt(net.netGain, dstTok) + " " + sym + " (" + (net.netPct >= 0 ? "+" : "") + net.netPct.toFixed(2) + "%)" : "-");
+    return net;
+  };
+  await netCase("A 100 USDT->QOM", xsA, toA, "QOM");
+  await netCase("B 10B QOM->QOM", xsB, toA, "QOM");
+  await netCase("C 1000 USDT->QOM", xsC, toA, "QOM");
+  await netCase("D 1000 USDT->qCAW", xsD, toD, "qCAW");
+  console.log("期待: A shown=true / B shown=false (手数料負け) / C shown=true / D shown=true");
+
 })().catch((e) => { console.error("PROBE FAILED:", e); process.exit(1); });
