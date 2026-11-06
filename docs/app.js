@@ -1,12 +1,15 @@
 "use strict";
-/* DEXアグリゲーター v4 (42 Chain / QL1 / 42 Testnet)
+/* DEXアグリゲーター v5 (42 Chain / QL1 / 42 Testnet)
    1inch風: 直接・1つ経由・2つ経由の全ルートを getAmountsOut で比較し、
    さらに上位ルートへの「分割」配分も評価して一番多いプランを提示する。
    分割の1tx実行には専用コントラクト (contracts/SplitSwap.sol) が必要。
    デプロイ済みチェーンでのみ分割実行でき、それ以外は見積もりのみ（正直に表示）。
    v3: クロスチェーン (QL1 <=> 42 Chain) の束ね見積もり＋ガイド式実行。
    v4: 価格差 (裁定) — クロス見積もりのベンチマーク差表示＋バッジと、
-   QOM建てで全ブリッジ可能トークン×両方向を実見積もりする価格差ボード。*/
+   QOM建てで全ブリッジ可能トークン×両方向を実見積もりする価格差ボード。
+   v5: クロスチェーンの結果を「全体ルート」単位に変更。中継トークンごとに
+   交換1・交換2の上位バリアントを組み合わせた全体ルートを並べ、選んだ
+   全体ルートのパスそのものをガイド実行 (ステップ1/4) で使う。*/
 
 const NATIVE_PH = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 const WQOM = "0xa26dfbf98dd1a32fae56a3d2b2d60a8a41b0bdf0";
@@ -60,13 +63,20 @@ const STR = {
     caBadFormat: "アドレスの形式が違います（0x + 40文字）", caExists: "そのトークンはもう一覧にあります", caReading: "チェーンから読み取り中…",
     caAdded: (s, n, d) => "追加しました: " + s + "（" + n + "、小数 " + d + " 桁）", caReadFail: "読み取れませんでした: ",
     swapBtnSingle: "このルートで交換する", swapBtnSplit: "この分割プランで交換する",
-    xComparing: "クロスチェーンの候補を比べています…（中継トークンごとに 交換→ブリッジ→交換 を全部見積もります）",
-    xQuoted: (n, sym, amt, dstSym) => "中継候補 " + n + " 件を比べました。いちばん多いのは中継 " + sym + " で、最終見積もりは約 " + amt + " " + dstSym + " です。",
+    xComparing: "クロスチェーンの全体ルートを比べています…（中継トークンごとに 交換→ブリッジ→交換 の組み合わせを全部見積もります。少し時間がかかります）",
+    xQuoted: (n, sym, amt, dstSym) => "全体ルート " + n + " 件を比べました。いちばん多いのは中継 " + sym + " のルートで、最終見積もりは約 " + amt + " " + dstSym + " です。",
     xQuoteFail: "クロスチェーン見積もりができませんでした: ", xNoCandidate: "成立する中継候補がありませんでした（プールが無いか、流動性がありません）",
     xVia: "中継", xSwap1: "交換1", xBridge: "ブリッジ", xSwap2: "交換2", xFinalEst: "最終見積もり",
     xDirectBridge: "直接ブリッジ（スワップなしでそのまま入る）",
     xBridgeFeeZero: "手数料 0", xNativeFeeInf: (amt) => "＋メッセージ代 約 " + amt + " [42]", xNativeFeeQl1: "＋メッセージ代 0（実測: QL1側の送信は全て支払い0でした）",
-    xStartBtn: "この中継ではじめる", xTooSmall: "ブリッジの最小量（1トークン）未満のため使えません",
+    xStartBtn: "このルートではじめる", xTooSmall: "ブリッジの最小量（1トークン）未満のため使えません",
+    xBridgeMark: "ブリッジ",
+    routeGone: "選んだルートが今は使えなくなりました。見積もりをやり直してください（別のルートへ自動では切り替えていません）",
+    xStep4DescV5: (sym, dst, label) => "到着した " + sym + " を、選んだルート（" + label + "）で " + dst + " に交換します。実行ボタンを押すと、そのルートのまま今の値段で見積もり直してから送ります。",
+    xStep4BtnExec: "ステップ4を実行（最後の交換）",
+    xStep4QuoteLine: (amt, sym, label) => "今の見積もり: 約 " + amt + " " + sym + "（ルート: " + label + "）",
+    xStep4Identity: "届いたトークンがそのまま受け取りトークンなので、交換は不要です。このまま完了にできます。",
+    xStep4IdentityBtn: "完了にする（交換なし）",
     xDisabledOsak: "42 Chain → QL1 の OSAK ブリッジは、公式ルーターの送信実績が確認できていないため無効です（QL1 → 42 Chain は実績あり）",
     xDisabledWrap: "QOM のまま送るには WQOM の形が必要で、このサイトでは包み直しが未対応のため、この組み合わせでは使えません（出すトークンで WQOM を選べば使えます）",
     xEstNote: "最終見積もりは今の値段での計算です。ブリッジの到着は数分かかることがあり、最後の交換は到着時点の値段で決まります。",
@@ -154,13 +164,20 @@ const STR = {
     caBadFormat: "Invalid address format (0x + 40 characters)", caExists: "That token is already in the list", caReading: "Reading from the chain...",
     caAdded: (s, n, d) => "Added: " + s + " (" + n + ", " + d + " decimals)", caReadFail: "Could not read it: ",
     swapBtnSingle: "Swap with this route", swapBtnSplit: "Swap with this split plan",
-    xComparing: "Comparing cross-chain candidates... (for each bridge token: swap -> bridge -> swap)",
-    xQuoted: (n, sym, amt, dstSym) => "Compared " + n + " bridge candidates. The best is via " + sym + ", final estimate approx. " + amt + " " + dstSym + ".",
+    xComparing: "Comparing full cross-chain routes... (for each bridge token, combinations of swap -> bridge -> swap; this takes a little while)",
+    xQuoted: (n, sym, amt, dstSym) => "Compared " + n + " full routes. The best is a route via " + sym + ", final estimate approx. " + amt + " " + dstSym + ".",
     xQuoteFail: "Cross-chain quote failed: ", xNoCandidate: "No bridge candidate works (no pool or no liquidity)",
     xVia: "Via", xSwap1: "Swap 1", xBridge: "Bridge", xSwap2: "Swap 2", xFinalEst: "Final estimate",
     xDirectBridge: "Direct bridge (no swap — enters as-is)",
     xBridgeFeeZero: "fee 0", xNativeFeeInf: (amt) => "+ messaging cost approx. " + amt + " [42]", xNativeFeeQl1: "+ messaging cost 0 (measured: every sampled QL1 send paid 0)",
-    xStartBtn: "Start with this bridge token", xTooSmall: "Below the bridge minimum (1 token)",
+    xStartBtn: "Start with this route", xTooSmall: "Below the bridge minimum (1 token)",
+    xBridgeMark: "bridge",
+    routeGone: "The route you picked no longer works. Please compare again (it was NOT switched to another route automatically)",
+    xStep4DescV5: (sym, dst, label) => "Swap the arrived " + sym + " into " + dst + " along the route you picked (" + label + "). Pressing the button re-quotes that exact route at current prices before sending.",
+    xStep4BtnExec: "Run step 4 (final swap)",
+    xStep4QuoteLine: (amt, sym, label) => "Current quote: approx. " + amt + " " + sym + " (route: " + label + ")",
+    xStep4Identity: "The arrived token already is the token you receive, so no swap is needed. You can simply finish.",
+    xStep4IdentityBtn: "Finish (no swap)",
     xDisabledOsak: "The 42 Chain -> QL1 OSAK bridge is disabled: no sends through the official router could be verified (QL1 -> 42 Chain is verified)",
     xDisabledWrap: "Sending QOM as-is needs it in WQOM form, and wrapping is not supported on this site, so this combination is unavailable (pick WQOM as the token you pay to use it)",
     xEstNote: "The final estimate uses current prices. Bridge arrival can take several minutes, and the last swap executes at arrival-time prices.",
@@ -679,6 +696,38 @@ async function fetchBestRoute(chainObj, fromTok, toTok, amountIn) {
   return best;
 }
 
+/* ---------- v5: all-routes quote (no split evaluation, impacts attachable later) ----------
+   fetchBestRoute の「最良だけ」版に対して、成功した全ルートを多い順で返す。
+   クロスチェーンの全体ルート列挙 (レッグのバリアント保持) に使う。 */
+async function fetchRoutesOnly(chainObj, fromTok, toTok, amountIn) {
+  if (fromTok.address.toLowerCase() === toTok.address.toLowerCase()) return [];
+  if (amountIn <= 0n) return [];
+  const paths = buildCandidatePaths(chainObj, fromTok, toTok);
+  const results = await rpcBatch(chainObj, paths.map((p) => [chainObj.router, encodeGetAmountsOut(amountIn, p)]));
+  const routes = [];
+  results.forEach((hex, i) => {
+    const amounts = decodeAmountsOut(hex);
+    if (!amounts || !amounts.length) return;
+    const out = amounts[amounts.length - 1];
+    if (out <= 0n) return;
+    routes.push({ path: paths[i], amounts, amountOut: out, hops: paths[i].length - 1, priceImpactPct: null });
+  });
+  routes.sort((a, b) => (b.amountOut > a.amountOut ? 1 : b.amountOut < a.amountOut ? -1 : 0));
+  return routes;
+}
+/* items: [{route, amountIn}] — ルートごとに自分の入力額で spot 比較して
+   priceImpactPct を付ける (ペア情報の取得はチェーンにつき1バッチにまとめる)。 */
+async function attachImpactsMulti(chainObj, items) {
+  if (!items.length) return;
+  try {
+    const { pairOf, info } = await fetchPairs(chainObj, items.map((i) => i.route));
+    for (const it of items) {
+      const spot = spotOutFor(it.route, it.amountIn, pairOf, info);
+      if (spot !== null && spot > 0n) it.route.priceImpactPct = (1 - Number(it.route.amountOut) / Number(spot)) * 100;
+    }
+  } catch (e) { /* impact is optional */ }
+}
+
 /* ---------- v3 cross-chain: bridge calls ---------- */
 function bridgePairBySym(sym) { return BRIDGE_PAIRS.find((p) => p.sym === sym) || null; }
 function encodeRecipient32(address) { return encAddr(address); } // bytes32 = address left-padded to 32 bytes
@@ -722,60 +771,120 @@ function extractMessageId(receipt) {
   return null;
 }
 
-/* ---------- v3 cross-chain: quote all bridge candidates ---------- */
+/* ---------- v3/v5 cross-chain: quote FULL ROUTES per bridge intermediate ----------
+   v5: 中継トークンごとに「交換1のバリアント × 交換2」を組み合わせた全体ルートを
+   単位として返す。各全体ルートの最終額は、そのバリアントの交換1の実出力で交換2を
+   実際に見積もり直した値 (最良レッグの額の流用はしない)。
+   - 交換1: 上位3パス (直接含む) を保持。出すトークン自体が中継トークンの場合は
+     交換なし (直接ブリッジ) の1バリアント。
+   - 交換2: 各交換1バリアントには最良パスを、交換1最良バリアントには上位3パスを組み合わせる。
+   - 重複する全体パスは除去。中継ごとに最大4件、全体で最大24件
+     (中継ごとの最良1件とベンチマークの全体ルートは必ず残す)。
+   戻り値の各要素は v4 互換フィールド (swap1Route / swap1Out / bridgeOut /
+   swap2Route / finalOut / nativeFee / vsBench*) を持ち、加えて
+   leg1Path / leg2Path (アドレス配列。交換なしの側は null) を持つ。 */
+const X_MAX_ROUTES_PER_T = 4, X_MAX_ROUTES_TOTAL = 24, X_LEG_VARIANTS = 3;
 async function quoteCrossPlan(srcKey, fromTok, dstKey, toTok, amountIn) {
   const src = CHAINS[srcKey], dst = CHAINS[dstKey];
-  const out = [];
+  const disabled = [];
+  const perPair = []; // [{pair, routes:[fullRoute...]}]
+  const impactItems = { [srcKey]: [], [dstKey]: [] };
   for (const pair of BRIDGE_PAIRS) {
     const tSrc = tokenById(srcKey, srcKey === "infinite" ? pair.infId : pair.ql1Id);
     const tDst = tokenById(dstKey, dstKey === "infinite" ? pair.infId : pair.ql1Id);
     if (!tSrc || !tDst) continue;
     const enabledDir = srcKey === "ql1" ? pair.enabledFromQl1 : pair.enabledFromInf;
-    if (!enabledDir) { out.push({ pair, tSrc, tDst, enabled: false, reason: t("xDisabledOsak") }); continue; }
-    if (srcKey === "ql1" && fromTok.id === "native" && pair.sym === "QOM") { out.push({ pair, tSrc, tDst, enabled: false, reason: t("xDisabledWrap") }); continue; }
-    // swap 1 (skip when the source token already is the bridge token)
-    let swap1Out = null, swap1Route = null;
-    if (fromTok.address.toLowerCase() === tSrc.address.toLowerCase()) swap1Out = amountIn;
-    else {
-      const best = await fetchBestRoute(src, fromTok, tSrc, amountIn);
-      if (!best) continue;
-      swap1Out = best.amountOut; swap1Route = best;
+    if (!enabledDir) { disabled.push({ pair, tSrc, tDst, enabled: false, reason: t("xDisabledOsak") }); continue; }
+    if (srcKey === "ql1" && fromTok.id === "native" && pair.sym === "QOM") { disabled.push({ pair, tSrc, tDst, enabled: false, reason: t("xDisabledWrap") }); continue; }
+    // --- leg 1 variants: source -> bridge token (top distinct paths) ---
+    let leg1Vars; // [{route|null, out}]
+    if (fromTok.address.toLowerCase() === tSrc.address.toLowerCase()) {
+      leg1Vars = [{ route: null, out: amountIn }];
+    } else {
+      const all = await fetchRoutesOnly(src, fromTok, tSrc, amountIn);
+      if (!all.length) continue;
+      leg1Vars = all.slice(0, X_LEG_VARIANTS).map((r) => ({ route: r, out: r.amountOut }));
     }
-    if (swap1Out < (10n ** BigInt(tSrc.decimals))) { out.push({ pair, tSrc, tDst, enabled: false, reason: t("xTooSmall") }); continue; }
-    const bridgeOut = swap1Out; // bridge fee 0, scale 1:1 (verified by sampling + quoteBridge)
-    // swap 2 at current rates on the destination chain
-    let finalOut = null, swap2Route = null;
-    if (tDst.address.toLowerCase() === toTok.address.toLowerCase()) finalOut = bridgeOut;
-    else {
-      const best2 = await fetchBestRoute(dst, tDst, toTok, bridgeOut);
-      if (!best2) continue;
-      finalOut = best2.amountOut; swap2Route = best2;
+    const minT = 10n ** BigInt(tSrc.decimals);
+    leg1Vars = leg1Vars.filter((v) => v.out >= minT);
+    if (!leg1Vars.length) { disabled.push({ pair, tSrc, tDst, enabled: false, reason: t("xTooSmall") }); continue; }
+    // --- leg 2 combinations (bridge fee 0, 1:1 — verified by sampling + quoteBridge) ---
+    const leg2Identity = tDst.address.toLowerCase() === toTok.address.toLowerCase();
+    const combos = new Map();
+    const addCombo = (v, r2, finalOut) => {
+      const key = (v.route ? v.route.path.join(",") : "-") + "|" + (r2 ? r2.path.join(",") : "-");
+      if (combos.has(key)) return;
+      combos.set(key, {
+        pair, tSrc, tDst, enabled: true,
+        swap1Route: v.route, swap1Out: v.out, bridgeOut: v.out,
+        swap2Route: r2, finalOut,
+        leg1Path: v.route ? v.route.path.slice() : null,
+        leg2Path: r2 ? r2.path.slice() : null,
+        nativeFee: 0n, vsBenchDiff: null, vsBenchPct: null, isBenchmark: false,
+      });
+    };
+    let leg2TopForBest = null;
+    for (let vi = 0; vi < leg1Vars.length; vi++) {
+      const v = leg1Vars[vi];
+      if (leg2Identity) { addCombo(v, null, v.out); continue; }
+      const all2 = await fetchRoutesOnly(dst, tDst, toTok, v.out);
+      if (!all2.length) continue;
+      if (vi === 0) leg2TopForBest = all2.slice(0, X_LEG_VARIANTS);
+      addCombo(v, all2[0], all2[0].amountOut);
     }
-    let nativeFee = 0n;
-    if (srcKey === "infinite") { try { const q = await fetchBridgeNativeQuote(pair); if (q) nativeFee = q.totalNative; } catch (e) { /* shown as approx */ } }
-    out.push({ pair, tSrc, tDst, enabled: true, swap1Out, swap1Route, bridgeOut, finalOut, swap2Route, nativeFee });
+    if (leg2TopForBest) for (let i = 1; i < leg2TopForBest.length; i++) addCombo(leg1Vars[0], leg2TopForBest[i], leg2TopForBest[i].amountOut);
+    let routes = [...combos.values()];
+    if (!routes.length) continue;
+    routes.sort((a, b) => (b.finalOut > a.finalOut ? 1 : b.finalOut < a.finalOut ? -1 : 0));
+    routes = routes.slice(0, X_MAX_ROUTES_PER_T);
+    if (srcKey === "infinite") { try { const q = await fetchBridgeNativeQuote(pair); const fee = q ? q.totalNative : 0n; for (const r of routes) r.nativeFee = fee; } catch (e) { /* shown as approx */ } }
+    perPair.push({ pair, routes });
+    for (const r of routes) {
+      if (r.swap1Route) impactItems[srcKey].push({ route: r.swap1Route, amountIn });
+      if (r.swap2Route) impactItems[dstKey].push({ route: r.swap2Route, amountIn: r.bridgeOut });
+    }
   }
-  const en = out.filter((c) => c.enabled);
-  en.sort((a, b) => (b.finalOut > a.finalOut ? 1 : b.finalOut < a.finalOut ? -1 : 0));
-  const result = [...en, ...out.filter((c) => !c.enabled)];
   /* v4 benchmark: the "obvious" route — via QOM, or bridging the source token
-     itself when that is possible. The better of the available ones is the
-     benchmark; every candidate gets its difference vs the benchmark so the
-     price-gap (arbitrage) saving is visible on the card itself. */
-  let benchmark = null;
-  const consider = (cand, kind) => {
-    if (!cand || !cand.enabled || cand.finalOut == null) return;
-    if (!benchmark || cand.finalOut > benchmark.finalOut) benchmark = { sym: cand.pair.sym, kind, finalOut: cand.finalOut };
+     itself when that is possible. The better of the two intermediates' best
+     full routes is the benchmark; every full route gets its difference vs it. */
+  let benchmark = null, benchmarkRoute = null;
+  const considerPair = (sym, kind) => {
+    const pp = perPair.find((p) => p.pair.sym === sym);
+    if (!pp || !pp.routes.length) return;
+    const best = pp.routes[0];
+    if (!benchmark || best.finalOut > benchmark.finalOut) { benchmark = { sym, kind, finalOut: best.finalOut }; benchmarkRoute = best; }
   };
-  consider(en.find((c) => c.pair.sym === "QOM"), "qom");
-  consider(en.find((c) => c.tSrc.address.toLowerCase() === fromTok.address.toLowerCase()), "direct");
+  considerPair("QOM", "qom");
+  const directPP = perPair.find((p) => {
+    const ts = tokenById(srcKey, srcKey === "infinite" ? p.pair.infId : p.pair.ql1Id);
+    return ts && ts.address.toLowerCase() === fromTok.address.toLowerCase();
+  });
+  if (directPP) considerPair(directPP.pair.sym, "direct");
+  if (benchmarkRoute) benchmarkRoute.isBenchmark = true;
+  /* global cap: keep the best full route of every intermediate, then fill by
+     output up to the cap (the benchmark route is a per-intermediate best, so
+     it is always kept). */
+  let all = perPair.flatMap((p) => p.routes);
+  all.sort((a, b) => (b.finalOut > a.finalOut ? 1 : b.finalOut < a.finalOut ? -1 : 0));
+  let kept = all;
+  if (all.length > X_MAX_ROUTES_TOTAL) {
+    const keepSet = new Set(perPair.map((p) => p.routes[0]));
+    for (const r of all) { if (keepSet.size >= X_MAX_ROUTES_TOTAL) break; keepSet.add(r); }
+    kept = all.filter((r) => keepSet.has(r));
+  }
   if (benchmark) {
-    for (const c of result) {
-      if (!c.enabled || c.finalOut == null) continue;
+    for (const c of kept) {
       c.vsBenchDiff = c.finalOut - benchmark.finalOut;
       c.vsBenchPct = benchmark.finalOut > 0n ? (Number(c.vsBenchDiff) / Number(benchmark.finalOut)) * 100 : 0;
     }
   }
+  /* impacts only for the routes that survive (leg routes carry their own inputs) */
+  for (const key of [srcKey, dstKey]) {
+    const items = impactItems[key].filter((it) =>
+      kept.some((r) => (key === srcKey ? r.swap1Route : r.swap2Route) === it.route));
+    if (items.length) await attachImpactsMulti(CHAINS[key], items);
+  }
+  const result = [...kept, ...disabled];
   result.benchmark = benchmark;
   return result;
 }
@@ -1272,6 +1381,33 @@ async function onXQuote() {
   } catch (e) { setXStatus(t("xQuoteFail") + e.message, true); }
   finally { btn.disabled = false; }
 }
+/* v5: full-route path as one chain of nowrap token spans, bridge in the middle.
+   例: USDT → 42 → FISH → QOM（42 Chain）⇢ ブリッジ ⇢ qCAW → QOM（QL1） */
+function tokSpan(sym) { return '<span class="tok">' + esc(sym) + "</span>"; }
+function fullPathHtml(c, fromTok, toTok) {
+  const srcLabel = CHAINS[state.xSrc].label, dstLabel = CHAINS[xDstKey()].label;
+  const arrow = ' <span class="path-arrow">→</span> ';
+  let leg1;
+  if (c.leg1Path) {
+    // leg1 path symbols; the last one is the bridge token on the source chain
+    leg1 = c.leg1Path.map((a, i) => {
+      const s = symbolFor(state.xSrc, a);
+      return tokSpan(i === c.leg1Path.length - 1 ? s + "（" + srcLabel + "）" : s);
+    }).join(arrow);
+  } else {
+    leg1 = tokSpan(fromTok.symbol + "（" + srcLabel + "）");
+  }
+  let leg2;
+  if (c.leg2Path) {
+    leg2 = c.leg2Path.map((a, i) => {
+      const s = symbolFor(xDstKey(), a);
+      return tokSpan(i === c.leg2Path.length - 1 ? s + "（" + dstLabel + "）" : s);
+    }).join(arrow);
+  } else {
+    leg2 = tokSpan(toTok.symbol + "（" + dstLabel + "）");
+  }
+  return leg1 + ' <span class="tok bridge-mark">⇢ ' + esc(t("xBridgeMark")) + " ⇢</span> " + leg2;
+}
 function renderXCandidates() {
   const list = $("xCandidates"); if (!list) return;
   const dst = CHAINS[xDstKey()];
@@ -1285,10 +1421,11 @@ function renderXCandidates() {
     const s1 = c.swap1Route ? pathLabel(state.xSrc, c.swap1Route.path) + " → " + formatAmount(c.swap1Out, c.tSrc.decimals, 6) + " " + c.tSrc.symbol + (c.swap1Route.priceImpactPct != null ? " (" + t("routeImpact", c.swap1Route.priceImpactPct.toFixed(2)) + ")" : "") : t("xDirectBridge") + ": " + formatAmount(c.swap1Out, c.tSrc.decimals, 6) + " " + c.tSrc.symbol;
     const fee = state.xSrc === "infinite" ? t("xBridgeFeeZero") + " / " + t("xNativeFeeInf", formatAmount(c.nativeFee, 18, 4)) : t("xBridgeFeeZero") + " / " + t("xNativeFeeQl1");
     const s2 = c.swap2Route ? pathLabel(xDstKey(), c.swap2Route.path) + " → " + formatAmount(c.finalOut, toTok.decimals, 6) + " " + toTok.symbol + (c.swap2Route.priceImpactPct != null ? " (" + t("routeImpact", c.swap2Route.priceImpactPct.toFixed(2)) + ")" : "") : formatAmount(c.finalOut, toTok.decimals, 6) + " " + toTok.symbol;
+    const hops = (c.swap1Route ? c.swap1Route.hops : 0) + (c.swap2Route ? c.swap2Route.hops : 0);
     const bench = state.xBenchmark;
     let benchHtml = "";
     if (bench) {
-      if (c.finalOut === bench.finalOut && c.pair.sym === bench.sym) {
+      if (c.isBenchmark) {
         benchHtml = '<span class="r-line">' + esc(bench.kind === "direct" ? t("benchLabelDirect", bench.sym) : t("benchLabel", bench.sym)) + "</span>";
       } else if (c.vsBenchPct != null) {
         const diffAbs = c.vsBenchDiff < 0n ? -c.vsBenchDiff : c.vsBenchDiff;
@@ -1299,31 +1436,39 @@ function renderXCandidates() {
     return '<div class="route-card">' +
       '<span class="r-head"><span class="r-rank">' + esc(t("xVia")) + " " + esc(c.pair.sym) + "</span>" + (i === 0 ? '<span class="badge best">' + esc(t("routeBest")) + "</span>" : "") + gapBadge +
       '<span class="r-out">' + formatAmount(c.finalOut, toTok.decimals, 6) + " " + esc(toTok.symbol) + "</span></span>" +
+      '<span class="r-line fullpath">' + fullPathHtml(c, fromTok, toTok) + "</span>" +
       '<span class="r-line">' + esc(t("xSwap1")) + ": " + esc(s1) + "</span>" +
       '<span class="r-line">' + esc(t("xBridge")) + " (" + esc(CHAINS[state.xSrc].label) + " → " + esc(dst.label) + "): " + esc(fee) + "</span>" +
       '<span class="r-line">' + esc(t("xSwap2")) + ": " + esc(s2) + "</span>" +
-      '<span class="r-line">' + esc(t("xFinalEst")) + ": " + formatAmount(c.finalOut, toTok.decimals, 6) + " " + esc(toTok.symbol) + "</span>" +
+      '<span class="r-line">' + esc(t("xFinalEst")) + ": " + formatAmount(c.finalOut, toTok.decimals, 6) + " " + esc(toTok.symbol) + " ／ " + esc(t("routeHops", hops)) + "</span>" +
       benchHtml +
-      '<button type="button" class="x-start" data-sym="' + esc(c.pair.sym) + '">' + esc(t("xStartBtn")) + "</button></div>";
+      '<button type="button" class="x-start" data-idx="' + i + '">' + esc(t("xStartBtn")) + "</button></div>";
   }).join("") + '<p class="count">' + esc(t("xEstNote")) + "</p>";
-  list.querySelectorAll(".x-start").forEach((el) => el.addEventListener("click", () => startXFlow(el.dataset.sym)));
+  list.querySelectorAll(".x-start").forEach((el) => el.addEventListener("click", () => startXFlow(state.xCandidates[Number(el.dataset.idx)])));
 }
-async function startXFlow(sym, opts) {
+/* routeOrSym: a full-route entry from state.xCandidates (v5: the CHOSEN route's
+   paths are stored and executed exactly), or a bridge-token symbol string
+   (v4 callers: the best full route for that intermediate is used). */
+async function startXFlow(routeOrSym, opts) {
   if (!state.account) { setXStatus(t("xNeedConnect"), true); return; }
-  const cand = state.xCandidates.find((c) => c.enabled && c.pair.sym === sym);
-  if (!cand || !state.xQuote) return;
+  const cand = typeof routeOrSym === "string"
+    ? state.xCandidates.find((c) => c.enabled && c.pair.sym === routeOrSym)
+    : routeOrSym;
+  if (!cand || !cand.enabled || !state.xQuote) return;
+  const sym = cand.pair.sym;
   const src = CHAINS[state.xSrc], dst = CHAINS[xDstKey()];
   const fromTok = tokenById(state.xSrc, state.xQuote.fromId);
   let baselineT = 0n;
   try { baselineT = cand.swap1Route ? await readTokenBalance(src, cand.tSrc.address, state.account) : 0n; } catch (e) { /* optional */ }
   state.xflow = {
-    v: 1, step: cand.swap1Route ? 1 : 2,
+    v: 1, pathsV5: true, step: cand.swap1Route ? 1 : 2,
     srcKey: state.xSrc, dstKey: xDstKey(), fromId: state.xQuote.fromId, toId: state.xQuote.toId,
     amountText: $("xAmount").value, amountIn: state.xQuote.amountIn,
     sym, tSrcId: cand.tSrc.id, tDstId: cand.tDst.id,
-    swap1Path: cand.swap1Route ? cand.swap1Route.path : null, swap1Out: cand.swap1Out.toString(),
+    swap1Path: cand.swap1Route ? cand.swap1Route.path.slice() : null, swap1Out: cand.swap1Out.toString(),
+    swap2Path: cand.swap2Route ? cand.swap2Route.path.slice() : null, swap2Out: cand.finalOut.toString(),
     bridgeOut: cand.bridgeOut.toString(), finalEst: cand.finalOut.toString(), nativeFee: cand.nativeFee.toString(),
-    baselineT: baselineT.toString(), baselineDst: null, swap1Tx: null, bridgeTx: null, messageId: null, bridgeAt: null, arrived: null,
+    baselineT: baselineT.toString(), baselineDst: null, swap1Tx: null, bridgeTx: null, swap2Tx: null, messageId: null, bridgeAt: null, arrived: null,
     arbReturn: !!(opts && opts.arbReturn),
     createdAt: Date.now(),
   };
@@ -1369,10 +1514,19 @@ function renderXFlow() {
     (f.step === 3 ? '<p class="count" id="xElapsed"></p><button type="button" id="xCheckBtn">' + esc(t("xStep3CheckBtn")) + "</button>" : "") +
     (f.arrived ? '<p class="count">' + esc(t("xStepArrived", formatAmount(BigInt(f.arrived), tSrc.decimals, 6), tSrc.symbol)) + "</p>" : "") + "</div>";
   // step 4
+  let step4Desc, step4BtnLabel;
+  if (f.pathsV5) {
+    step4Desc = f.swap2Path ? t("xStep4DescV5", tSrc.symbol, toTok.symbol, pathLabel(f.dstKey, f.swap2Path)) : t("xStep4Identity");
+    step4BtnLabel = f.swap2Path ? t("xStep4BtnExec") : t("xStep4IdentityBtn");
+  } else {
+    step4Desc = t("xStep4Desc", tSrc.symbol, toTok.symbol);
+    step4BtnLabel = t("xStep4Btn");
+  }
   html += '<div class="xstep' + (f.step === 4 ? " current" : "") + '"><div class="xstep-head"><b>' + esc(t("xStep4Title")) + '</b><span class="badge-step">' + esc(st(4)) + '</span></div>' +
-    '<p class="count">' + esc(t("xStep4Desc", tSrc.symbol, toTok.symbol)) + "</p>" +
+    '<p class="count">' + esc(step4Desc) + "</p>" +
+    (f.pathsV5 && f.swap2Path && f.step === 4 ? '<p class="count" id="xStep4Quote"></p>' : "") +
     (f.arbReturn ? '<p class="count">' + esc(t("arbRtNote")) + "</p>" : "") +
-    (f.step === 4 ? '<button type="button" id="xStep4Btn">' + esc(t("xStep4Btn")) + "</button>" : "") + "</div>";
+    (f.step === 4 ? '<button type="button" id="xStep4Btn">' + esc(step4BtnLabel) + "</button>" : "") + "</div>";
   if (f.step === "done") {
     html += '<p class="count">' + esc(t("xFlowDone")) + "</p>";
     if (f.arbReturn) html += '<button type="button" id="xReturnBtn">' + esc(t("arbReturnBtn")) + "</button>";
@@ -1382,6 +1536,7 @@ function renderXFlow() {
   const b1 = $("xStep1Btn"); if (b1) b1.addEventListener("click", doXStep1);
   const b2 = $("xStep2Btn"); if (b2) b2.addEventListener("click", doXStep2);
   const b4 = $("xStep4Btn"); if (b4) b4.addEventListener("click", doXStep4);
+  if (f.step === 4 && f.pathsV5 && f.swap2Path) fillStep4Quote();
   const brt = $("xReturnBtn"); if (brt) brt.addEventListener("click", startReturnFlow);
   const bc = $("xCheckBtn"); if (bc) bc.addEventListener("click", () => checkArrival(true));
   if (f.step === 3) {
@@ -1392,6 +1547,30 @@ function renderXFlow() {
   }
 }
 function shortHash(h) { return h ? h.slice(0, 10) + "…" + h.slice(-6) : ""; }
+/* v5: re-quote ONE exact stored path (never substitutes another path).
+   Returns the output amount, or null when that path no longer quotes. */
+async function requotePathExact(chainObj, amountIn, path) {
+  const hex = await rpcOne(chainObj, chainObj.router, encodeGetAmountsOut(amountIn, path));
+  const amts = decodeAmountsOut(hex);
+  if (!amts || !amts.length || amts[amts.length - 1] <= 0n) return null;
+  return amts[amts.length - 1];
+}
+/* Show the current re-quote of the stored leg-2 path inside step 4 (display only;
+   execution re-quotes again at click time). */
+async function fillStep4Quote() {
+  const f = state.xflow; if (!f || f.step !== 4 || !f.pathsV5 || !f.swap2Path) return;
+  const el = $("xStep4Quote"); if (!el) return;
+  const { toTok, dst } = xFlowTokens();
+  if (!toTok || !dst) return;
+  try {
+    const out = await requotePathExact(dst, BigInt(f.arrived || f.bridgeOut), f.swap2Path);
+    const el2 = $("xStep4Quote");
+    if (!el2 || !state.xflow || state.xflow.step !== 4) return;
+    el2.textContent = out != null
+      ? t("xStep4QuoteLine", formatAmount(out, toTok.decimals, 6), toTok.symbol, pathLabel(f.dstKey, f.swap2Path))
+      : t("routeGone");
+  } catch (e) { /* display only */ }
+}
 async function doXStep1() {
   const f = state.xflow; if (!f || f.step !== 1) return;
   const { fromTok, tSrc, src } = xFlowTokens();
@@ -1399,7 +1578,15 @@ async function doXStep1() {
   try {
     if (!state.account) throw new Error(t("xNeedConnect"));
     await ensureChain(src);
-    const route = { path: f.swap1Path, amountOut: BigInt(f.swap1Out), amountIn: BigInt(f.amountIn), hops: f.swap1Path.length - 1 };
+    let amountOut = BigInt(f.swap1Out);
+    if (f.pathsV5) {
+      // re-quote the CHOSEN route's exact path for min-out; if it is gone, stop
+      // with a clear error instead of silently switching to another path.
+      const fresh = await requotePathExact(src, BigInt(f.amountIn), f.swap1Path);
+      if (fresh == null) throw new Error(t("routeGone"));
+      amountOut = fresh;
+    }
+    const route = { path: f.swap1Path, amountOut, amountIn: BigInt(f.amountIn), hops: f.swap1Path.length - 1 };
     if (!fromTok.isNative) await ensureAllowance(src.router, fromTok, BigInt(f.amountIn), src);
     const tx = buildSwapTx(src, fromTok, tSrc, route, state.account, state.slippagePct);
     setXStatus(t("xWorking"));
@@ -1461,7 +1648,9 @@ async function checkArrival(manual) {
   } catch (e) { if (manual) setXStatus(t("xStepFail") + e.message, true); }
   return false;
 }
-function doXStep4() {
+/* v4-era saved flows (no stored leg-2 path): hand off to the same-chain screen
+   exactly as before. */
+function doXStep4Legacy() {
   const f = state.xflow; if (!f || f.step !== 4) return;
   const arrived = BigInt(f.arrived || f.bridgeOut);
   const tDst = tokenById(f.dstKey, f.tDstId);
@@ -1475,6 +1664,41 @@ function doXStep4() {
   setStatus(t("xStepArrived", formatAmount(arrived, tDst.decimals, 6), tDst.symbol) + " — " + (LANG === "en" ? "Now compare routes and swap." : "ルートを比べて交換してください。"));
   refreshBalances();
   renderXFlow();
+}
+/* v5: execute the final swap along the STORED leg-2 path of the chosen full
+   route. The path is re-quoted at execution time (the user saw the current
+   quote in the step before signing); if that exact path no longer quotes,
+   stop with a clear error — never switch paths silently. */
+async function doXStep4() {
+  const f = state.xflow; if (!f || f.step !== 4) return;
+  if (!f.pathsV5) { doXStep4Legacy(); return; }
+  const { tDst, toTok, dst } = xFlowTokens();
+  if (!tDst || !toTok || !dst) return;
+  const arrived = BigInt(f.arrived || f.bridgeOut);
+  const btn = $("xStep4Btn"); if (btn) btn.disabled = true;
+  try {
+    if (!state.account) throw new Error(t("xNeedConnect"));
+    if (!f.swap2Path) {
+      // leg 2 is the identity: the arrived token already is the destination token
+      f.step = "done"; saveXFlow(); renderXFlow();
+      setXStatus(t("xStep4Identity"));
+      return;
+    }
+    await ensureChain(dst);
+    const fresh = await requotePathExact(dst, arrived, f.swap2Path);
+    if (fresh == null) throw new Error(t("routeGone"));
+    setXStatus(t("xStep4QuoteLine", formatAmount(fresh, toTok.decimals, 6), toTok.symbol, pathLabel(f.dstKey, f.swap2Path)));
+    const route = { path: f.swap2Path, amountOut: fresh, amountIn: arrived, hops: f.swap2Path.length - 1 };
+    if (!tDst.isNative) await ensureAllowance(dst.router, tDst, arrived, dst);
+    const tx = buildSwapTx(dst, tDst, toTok, route, state.account, state.slippagePct);
+    setXStatus(t("xWorking"));
+    const hash = await sendTx(tx, "0x" + tx.value.toString(16));
+    f.swap2Tx = hash; saveXFlow();
+    const rc = await waitReceipt(hash);
+    if (rc && rc.status === "0x0") throw new Error(t("statusSwapFailedTx"));
+    f.step = "done"; saveXFlow(); renderXFlow();
+    setXStatus(t("statusSwapDone"));
+  } catch (e) { setXStatus(t("xStepFail") + friendlyErr(e), true); if (btn) btn.disabled = false; }
 }
 function onXAbandon() {
   state.xflow = null; saveXFlow(); stopXPoll(); renderXFlow();
@@ -1681,6 +1905,6 @@ if (typeof document !== "undefined" && document.getElementById && document.getEl
 }
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { CHAINS, STR, LANG, state, parseAmount, formatAmount, formatRate, formatGas, encAddr, encUint, encLegsTail, encodeGetAmountsOut, decodeAmountsOut, buildCandidatePaths, fetchQuotesForTokens, evaluateSplits, buildSwapTx, buildApproveTx, buildSplitTx, applySlippageBps, fetchTokenMeta, tokenById, allTokens, symbolFor, onQuote, onCaAdd, selectRoute, selectSplit, selectedRoute, setChain, estimateGasUnitsSingle, estimateGasUnitsSplit, splitExecutable,
-    BRIDGE_PAIRS, BRIDGE_MAILBOX, bridgePairBySym, fetchBestRoute, buildBridgeTx, decodeBridgeTxData, encodeRecipient32, fetchBridgeNativeQuote, fetchBridgeDelivered, readTokenBalance, extractMessageId, quoteCrossPlan, serializeXFlow, restoreXFlow, saveXFlow, loadXFlow, setMode, setXSrc, xDstKey, onXQuote, renderXCandidates, startXFlow, renderXFlow, checkArrival, doXStep4, onXAbandon,
+    BRIDGE_PAIRS, BRIDGE_MAILBOX, bridgePairBySym, fetchBestRoute, fetchRoutesOnly, attachImpactsMulti, buildBridgeTx, decodeBridgeTxData, encodeRecipient32, fetchBridgeNativeQuote, fetchBridgeDelivered, readTokenBalance, extractMessageId, quoteCrossPlan, requotePathExact, serializeXFlow, restoreXFlow, saveXFlow, loadXFlow, setMode, setXSrc, xDstKey, onXQuote, renderXCandidates, startXFlow, renderXFlow, checkArrival, doXStep1, doXStep4, doXStep4Legacy, onXAbandon,
     qomTokenId, fetchBridgeFeeInQom, quoteArbRoute, quoteArbBoard, renderArbBoard, onArbScan, startArbFlow, startReturnFlow };
 }

@@ -1,4 +1,4 @@
-# DEXアグリゲーター（42 Chain / QL1 / 42 Testnet）— v4
+# DEXアグリゲーター（42 Chain / QL1 / 42 Testnet）— v5
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -36,6 +36,37 @@
   到着確認は、届く側チェーンで自分のトークン残高が増えたかを公開RPCで自動チェックします。
 - 最後の交換は到着時点の値段で再見積もりするので、最終見積もりは目安です。
   到着には数分かかることがあります（実測で約5分40秒の例あり）。
+
+### 全体ルート表示（v5）
+
+v5 から、クロスチェーンの結果は中継ごとの最良1件ではなく、
+**全体ルート（交換1 → ブリッジ → 交換2 を1つに束ねた通り道）** を単位に並べます。
+中継の仕組みはトークン固有ではなくブリッジ接続の有無だけが条件なので、
+ブリッジペア表にある全トークン（QOM / BABY / CAW / FATHER / HAWK / KET / O / OSAK、
+向きの有効範囲は下記の実在確認どおり）に対して一般的に列挙します
+（トークン名のハードコードなし・ペア表駆動）。
+
+- 交換1は上位3パス（直接・1つ経由・2つ経由）、交換2は「各交換1バリアントには
+  最良パス、交換1の最良バリアントには上位3パス」を組み合わせ、重複を除去。
+  中継ごとに最大4件・全体で最大24件（中継ごとの最良とベンチマークのルートは必ず保持）。
+- 各全体ルートの最終額は、そのバリアントの交換1の実出力を入力にして交換2を
+  実際に見積もり直した値です（最良レッグの額を別のパスに流用しません）。
+- カードには通り道全体を1本の鎖で表示します。例（1000 USDT → QL1 の QOM、実測）:
+  - `USDT → 42 → FISH → QOM（42 Chain）⇢ ブリッジ ⇢ QOM（QL1）` = **931,938,815,018 QOM**（基準）
+  - `USDT → FISH → QOM（42 Chain）⇢ ブリッジ ⇢ QOM（QL1）` = 846,349,806,769 QOM
+  - `USDT → 42 → QOM（42 Chain）⇢ ブリッジ ⇢ QOM（QL1）` = 164,083,781,214 QOM
+    （QOM/42 プールが小さいため、42 だけ経由だと大きく目減りします。単純なルートも
+    隠さず並べるので、なぜ遠回りが勝つのかがその場で分かります）
+  - 中継 CAW の最良: `USDT → 42 → FISH → CAW ⇢ qCAW → QOM` = 173,331,261,165 QOM
+  - 中継 BABY の最良: `USDT → 42 → FISH → BABY ⇢ BABY → QOM` = 485,927,843,971 QOM
+  - 中継 FATHER 337,798,379,437 / O 157,372,279,933 / HAWK 103,843,095,001 /
+    KET 67,926,878,543 QOM（同条件の最良全体ルート）
+- 実行は選んだ全体ルートの通り道そのものを使います。「このルートではじめる」で
+  交換1・交換2のパス（アドレス列）がフローに保存され（localStorage、再開時も保持）、
+  ステップ1とステップ4は保存パスで再見積もりしてから実行します。保存パスが
+  使えなくなっていた場合は、別のルートへ勝手に切り替えず、理由を表示して止まります。
+  v4 以前の保存フロー（パス無し）は従来どおり同一チェーン画面への受け渡しで継続できます。
+- 価格差ボードは従来どおりで、行クリックではその中継の最良全体ルートが選ばれます。
 
 ### ブリッジの実在確認（有効範囲の根拠）
 
@@ -213,6 +244,28 @@ with their reason; at the 100B QOM default, the build-time snapshot had
 Clicking a route pre-fills the guided cross-chain flow (round trips offer
 the return leg after the first completes; nothing is auto-sent).
 
+**New in v5 — full routes:** cross-chain results are now listed as FULL
+ROUTES (one bundled "swap 1 -> bridge -> swap 2" path each), not one best
+combination per bridge token. For every bridgeable token (the enumeration
+is driven by the bridge-pair table — any token with a working bridge can
+relay, nothing is token-specific), the top-3 swap-1 paths are combined
+with the best swap-2 path per variant (plus the top-3 swap-2 paths for the
+best swap-1 variant); each full route's final figure is computed by
+actually quoting swap 2 with that variant's swap-1 output. Caps: 4 routes
+per bridge token, 24 total, with every token's best route and the
+benchmark route always kept. Simpler routes stay visible even when far
+worse — measured at 1,000 USDT (42 Chain) -> QOM (QL1): via 42+FISH
+931,938,815,018 QOM (benchmark), via FISH only 846,349,806,769, via 42
+only 164,083,781,214 (the QOM/42 pool is tiny, which is exactly why the
+longer route wins). Best full routes in the same quote: BABY
+485,927,843,971 / FATHER 337,798,379,437 / CAW 173,331,261,165 / O
+157,372,279,933 / HAWK 103,843,095,001 / KET 67,926,878,543 QOM. Starting
+a route stores its exact leg paths in the guided flow (persisted across
+reloads); steps 1 and 4 re-quote and execute along the stored paths and
+stop with an explanation rather than switching paths if a stored path
+stops working. Flows saved by v4 (no stored leg-2 path) keep the old
+hand-off behaviour.
+
 Honest limits: executing a split in one transaction requires a dedicated aggregator
 contract. The contract (**SplitSwap**, in `contracts/`) is written and compiled but **not
 deployed yet** — on mainnet, splits are quote-only; on the testnet, deployment is blocked
@@ -230,6 +283,7 @@ https://ql1-infinite42-guppy-histoire.github.io/dex-aggregator/en.html
 node probe/probe.cjs               # ライブ見積もり・分割評価・calldata構築の検証（送信はしません）
 node probe/crosschain.cjs          # クロスチェーン見積もり（2方向）・ブリッジcalldata・delivered再確認
 node probe/arb.cjs                 # 価格差: 具体例 (42->QOM)・直接ブリッジ比較・ボード全行スナップショット
+node probe/fullroutes.cjs          # v5全体ルート: 1000 USDT->QL1 QOM の4例照合・全中継カバー・非ベストルートのcalldata照合
 node tools/harness.cjs             # 出荷コードを DOM スタブ上で動かす検証（JP/EN/テストネット/クロスチェーン）
 node tools/enumerate_testnet.cjs   # テストネット factory の全ペア列挙
 node tools/bridge/sample_counts.cjs    # ブリッジ各ルーターの実txメソッド集計
@@ -238,6 +292,12 @@ node tools/bridge/sample_delivery.cjs  # 実送信の messageId → 届け先 ma
 
 ## 更新履歴
 
+- **v5（2026-11-06）**: クロスチェーン結果を「全体ルート」単位に変更。中継ごとに
+  交換1・交換2の上位バリアントを組み合わせた全体ルートを最終額順に並べ（中継ごとに
+  最大4件・全体24件）、通り道全体を1本の鎖で表示。選んだ全体ルートのパスがフローに
+  保存され、ステップ1/4はその保存パスで再見積もりして実行（使えなくなっていたら
+  切り替えずに停止）。単純なルートも隠さず表示（例: 1000 USDT→QL1 QOM で
+  42経由だけのルート 164,083,781,214 QOM も一覧に残る）。
 - **v4（2026-11-06）**: 価格差（裁定）の表面化。クロスチェーン見積もりに
   ベンチマーク（中継 QOM / 直接ブリッジの多い方）との差表示と「価格差で +○%」
   バッジ、直接ブリッジの明示を追加。「価格差ボード」を新設：QOM 建てで

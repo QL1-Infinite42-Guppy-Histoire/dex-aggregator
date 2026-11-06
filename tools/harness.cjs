@@ -186,5 +186,48 @@ function loadPage(lang, seedStore) {
   await en3.app.onArbScan();
   console.log("[V4-EN] board rows:", en3.app.state.arbRows.length, "| html single group:", en3.els.arbBoard.innerHTML.includes("One-way arbitrage"), "| RT group:", en3.els.arbBoard.innerHTML.includes("Round-trip"), "| status:", en3.els.arbStatus.textContent.slice(0, 60));
 
+  // ---- v5: full routes ----
+  const jp5 = loadPage("index.html", {});
+  jp5.app.setMode("cross"); jp5.app.setXSrc("infinite");
+  jp5.els.xFromToken.value = "usdt"; jp5.els.xToToken.value = "native"; jp5.els.xAmount.value = "1000";
+  await jp5.app.onXQuote();
+  const fr = jp5.app.state.xCandidates.filter((c) => c.enabled);
+  const perSym = {};
+  for (const r of fr) perSym[r.pair.sym] = (perSym[r.pair.sym] || 0) + 1;
+  console.log("\n[V5-JP] full routes:", fr.length, "| per-intermediate:", JSON.stringify(perSym));
+  console.log("[V5-JP] caps ok (<=24 total, <=4 per T):", fr.length <= 24 && Object.values(perSym).every((n) => n <= 4));
+  console.log("[V5-JP] sorted desc across intermediates:", fr.every((r, i) => i === 0 || fr[i - 1].finalOut >= r.finalOut));
+  console.log("[V5-JP] multiple variants for QOM (>=3):", (perSym.QOM || 0) >= 3, "| benchmark route kept & flagged:", fr.some((r) => r.isBenchmark));
+  const xhtml = jp5.els.xCandidates.innerHTML;
+  console.log("[V5-JP] full-path html has bridge mark + 42 Chain + QL1:", xhtml.includes("ブリッジ") && xhtml.includes("42 Chain") && xhtml.includes("QL1"));
+  console.log("[V5-JP] start button label is route label:", xhtml.includes("このルートではじめる"), "| x-start still present:", xhtml.includes("x-start"));
+  // start a NON-best full route (example 2 shape: USDT -> FISH -> QOM leg1) and verify stored paths
+  const FISH_A = "0x2c32120a12b754272d9e85c57f64b50ca2c43513";
+  const ex2 = fr.find((r) => r.pair.sym === "QOM" && r.leg1Path && r.leg1Path.length === 3 && r.leg1Path[1].toLowerCase() === FISH_A);
+  console.log("[V5-JP] example-2 full route present (USDT->FISH->QOM):", !!ex2, ex2 ? "| final: " + jp5.app.formatAmount(ex2.finalOut, 18, 2) : "");
+  jp5.app.state.account = "0x1111111111111111111111111111111111111111";
+  if (ex2) {
+    await jp5.app.startXFlow(ex2);
+    const fl = jp5.app.state.xflow;
+    console.log("[V5-JP] flow stores CHOSEN paths exactly:", JSON.stringify(fl.swap1Path) === JSON.stringify(ex2.leg1Path), "| leg2 stored (identity=null):", fl.swap2Path === null, "| pathsV5:", fl.pathsV5 === true);
+    const saved = jp5.store["dexagg_xflow_v1"] || "";
+    console.log("[V5-JP] persisted localStorage carries leg1 path:", saved.includes("swap1Path") && saved.includes(FISH_A.slice(0, 20)));
+    // reload with the same store -> restore keeps the paths
+    const jp5b = loadPage("index.html", jp5.store);
+    const restored = jp5b.app.restoreXFlow(jp5.store["dexagg_xflow_v1"]); // restoreXFlow takes the raw JSON string
+    console.log("[V5-JP] reload-resume keeps swap1Path:", JSON.stringify(restored && restored.swap1Path) === JSON.stringify(ex2.leg1Path), "| step:", restored && restored.step);
+    // legacy v4 flow (no pathsV5 / no swap2Path) still renders step 4 with the legacy button
+    const legacy = { v: 1, step: 4, srcKey: "infinite", dstKey: "ql1", fromId: "usdt", toId: "native", amountText: "5", amountIn: "5000000000000000000", sym: "QOM", tSrcId: "qom", tDstId: "wqom", swap1Path: null, swap1Out: "0", bridgeOut: "1000000000000000000", finalEst: "0", nativeFee: "0", baselineT: "0", baselineDst: "0", swap1Tx: null, bridgeTx: null, messageId: null, bridgeAt: null, arrived: "1000000000000000000", createdAt: Date.now() };
+    jp5b.app.state.xflow = legacy; jp5b.app.renderXFlow();
+    console.log("[V5-JP] legacy v4 flow renders step4 (legacy button):", jp5b.els.xFlow.innerHTML.includes("ステップ4へ"));
+  }
+  const en5 = loadPage("en.html", {});
+  en5.app.setMode("cross"); en5.app.setXSrc("infinite");
+  en5.els.xFromToken.value = "usdt"; en5.els.xToToken.value = "native"; en5.els.xAmount.value = "100";
+  await en5.app.onXQuote();
+  const enHtml = en5.els.xCandidates.innerHTML;
+  console.log("[V5-EN] full-path html has 'bridge' + route start label:", enHtml.includes("bridge") && enHtml.includes("Start with this route"));
+  console.log("[V5-EN] full routes count:", en5.app.state.xCandidates.filter((c) => c.enabled).length);
+
   console.log("\nHARNESS DONE");
 })().catch((e) => { console.error("HARNESS FAILED:", e); process.exit(1); });

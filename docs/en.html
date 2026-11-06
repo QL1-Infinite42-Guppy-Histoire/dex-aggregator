@@ -115,7 +115,7 @@
   <div id="xCandidates" class="route-list"></div>
   <div id="xFlow"></div>
   <button id="xAbandon" type="button" style="display:none;margin-top:10px">Abandon (clear progress)</button>
-  <p class="count">Only tokens with verified bridge deliveries can be used as the bridge token (QOM / BABY / CAW / FATHER / HAWK / KET / O / OSAK — except OSAK from 42 Chain to QL1, where no sends could be verified). The bridge fee is 0. Sending from 42 Chain also costs a messaging fee (approx. 2.94 [42], re-fetched at send time); sending from QL1 measured 0. Arrival can take several minutes (one measured case took about 5 minutes).</p>
+  <p class="count">Only tokens with verified bridge deliveries can be used as the bridge token (QOM / BABY / CAW / FATHER / HAWK / KET / O / OSAK — except OSAK from 42 Chain to QL1, where no sends could be verified). <b>Any token with a working bridge connection can be used as the bridge token</b> — the mechanism does not differ per token. For each bridge token, the combinations of swap paths (full routes) are all listed, so you can see why a longer route pays more and what a simpler route would pay, and choose for yourself. The bridge fee is 0. Sending from 42 Chain also costs a messaging fee (approx. 2.94 [42], re-fetched at send time); sending from QL1 measured 0. Arrival can take several minutes (one measured case took about 5 minutes).</p>
 </section>
 
 <section class="panel" id="arbPanel">
@@ -163,13 +163,14 @@
     <li>"Price impact" is the difference between a no-fee estimate from pool reserves and the real quote (fees + size impact). Gas figures are estimates too.</li>
     <li>Small pools can move between quote and execution. Try a small amount first before swapping a large one.</li>
     <li>This site takes no fee. Swaps talk directly to each chain's DEX router (42 Chain: Don't Panic / QL1: QomSwap).</li>
+    <li><b>Full routes (v5)</b>: cross-chain results are listed as full routes — one bundled "swap 1 -&gt; bridge -&gt; swap 2" each. For every bridge token, the top path variants of both swaps are combined, so simpler routes (fewer pools) and longer-but-better routes are both visible and selectable. Starting a route stores its exact paths, and steps 1 and 4 execute along those stored paths (re-quoting that path at execution time; if it no longer works, the flow stops instead of switching to another path).</li>
     <li><b>Price-gap display (v4)</b>: cross-chain quotes now show a benchmark — the "obvious" route (via QOM, or bridging the token you pay itself when possible) — and each candidate's difference from it. When the best candidate beats the benchmark by more than 0.5%, it gets a "Price gap +x%" badge (measured example: 100 [42] on 42 Chain -&gt; QOM on QL1, the BABY bridge route paid +6.33% more than the QOM benchmark; at 500 [42] the BABY pools cannot absorb the size and it flips to −25.8% — always re-quote at your own size).</li>
     <li><b>Cross-chain (v3)</b>: bridging uses Hyperlane (Zaphod Bridge). A direction/token is enabled only where delivery was proven on-chain: message IDs were taken from real send transactions and checked against the destination chain's mailbox <code>delivered()</code> (sampled 2026-11-06: QL1 -&gt; 42 Chain 16/16 across all 8 tokens; 42 Chain -&gt; QL1 13/13 across 7 tokens, excluding OSAK, whose 42 Chain router has no sends at all in its history, so that one direction is disabled). The bridge site's own stats showing "0 QL1-origin deliveries" are an indexer gap — deliveries are confirmed on-chain. The final swap executes at arrival-time prices, so the final figure is an estimate.</li>
   </ul>
 </section>
 
 <footer>
-  <p>v4 / Data: 42 Chain RPC / QL1 RPC / 42 Testnet RPC (read directly from the pools). Source code is published under the MIT license.</p>
+  <p>v5 / Data: 42 Chain RPC / QL1 RPC / 42 Testnet RPC (read directly from the pools). Source code is published under the MIT license.</p>
 </footer>
 <script src="app.js"></script>
 </body>
