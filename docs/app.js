@@ -922,23 +922,72 @@ async function quoteCrossPlan(srcKey, fromTok, dstKey, toTok, amountIn) {
   return result;
 }
 
-/* ---------- v6: cross-chain SPLIT evaluation across full routes ----------
+/* ---------- v6/v6.1: cross-chain SPLIT evaluation across full routes ----------
    1つの取引を複数の全体ルートに割合配分する。各パートは「その全体ルートの
    保存パス」を「そのパートの金額」で実際に見積もり直す (交換1 → ブリッジ1:1 →
-   交換2)。最良レッグの額を流用しない。候補は中継が異なるルートを優先し、
-   直接ブリッジの全体ルートもパート候補に含む。
-   - ペア: 候補プール (最大4件) の全ペア × 10%刻み
-   - 3分割: 中継が異なる上位3件 × 10%刻み (各パート10%以上)
-   同じ (ルート, 金額) の見積もりはキャッシュし、RPC はレッグごとに一括する。
+   交換2)。最良レッグの額を流用しない。直接ブリッジの全体ルートも候補に含む。
+   v6.1 で候補と探索を拡張 (ユーザー指摘: 中継 QOM の leg1 バリアント
+   USDT→FISH→QOM が分割候補から漏れていた):
+   - 候補 = 全体ルートの最終額順 上位6件 + 中継ごとの最良ルート (最大8件)。
+     同じ中継の異なるパス (leg1 / leg2 バリアント) も別々の候補。
+   - 探索 = 候補の全ペア・全3分割・全4分割 × 10%刻み配分 (各パート10%以上)。
+     10%刻みのグリッド探索であり、全金額・全ルートの厳密な最適化ではない。
+   - 同じ中継への複数パートは、その中継の交換2が無い (中継 = 宛先トークン
+     そのもの) ときだけ許可する。交換2が実在する中継を2パートに分けると、
+     宛先側では同一プールへの交換が2回続くことになり、2件目が1件目で動いた
+     プールに当たる分、独立見積もりの合計が実額を上振れしてしまうため
+     (実測: 10B QOM の BABY バリアント同士の 50:50 が単独ベストを +0.33%
+     上回って見えるが、これは上振れ側の数字)。中継 = 宛先の場合は宛先側に
+     プールが無く、差は送信側の経路だけなので、同一チェーン分割と同じ扱い。
+   パート金額は pct の床割りで統一し (同じ (ルート, 金額) の見積もりは
+   キャッシュ、RPC はレッグごとに一括)、勝った配分だけ最後に端数を最大
+   パートへ寄せて再見積もりし、パート合計 = 入力額ちょうどにする。
    plan は「最良の分割が単一ベスト全体ルートに勝ったとき」だけ立つ (正直ルール)。 */
 function crossSplitPool(enabled) {
-  const pool = []; const seenSym = new Set();
+  const pool = enabled.slice(0, 6);
   for (const r of enabled) {
-    if (pool.length >= 4) break;
-    if (!seenSym.has(r.pair.sym)) { seenSym.add(r.pair.sym); pool.push(r); }
+    if (pool.length >= 8) break;
+    if (!pool.includes(r) && !pool.some((p) => p.pair.sym === r.pair.sym)) pool.push(r);
   }
-  if (pool.length < 4) for (const r of enabled) { if (pool.length >= 4) break; if (!pool.includes(r)) pool.push(r); }
   return pool;
+}
+const X_SPLIT_COMPS = { 2: [], 3: [], 4: [] };
+(function buildSplitComps() {
+  const gen = (n, total, prefix) => {
+    if (n === 1) { if (total >= 10) X_SPLIT_COMPS[prefix.length + 1].push([...prefix, total]); return; }
+    for (let p = 10; p <= total - 10 * (n - 1); p += 10) gen(n - 1, total - p, [...prefix, p]);
+  };
+  gen(2, 100, []); gen(3, 100, []); gen(4, 100, []);
+})();
+/* same-intermediate rule (see header): multiple parts on one intermediate are
+   allowed only when that intermediate's leg 2 is the identity (the bridged
+   token IS the destination token, so there is no destination-side pool). */
+function splitAllocAllowed(cands) {
+  const bySym = new Map();
+  for (const c of cands) {
+    if (!bySym.has(c.pair.sym)) bySym.set(c.pair.sym, []);
+    bySym.get(c.pair.sym).push(c);
+  }
+  for (const group of bySym.values()) {
+    if (group.length > 1 && group.some((c) => c.leg2Path)) return false;
+  }
+  return true;
+}
+async function requoteSplitPart(srcKey, dstKey, cand, amount) {
+  let o1 = null;
+  if (!cand.leg1Path) o1 = amount;
+  else {
+    const res = await rpcBatch(CHAINS[srcKey], [[CHAINS[srcKey].router, encodeGetAmountsOut(amount, cand.leg1Path)]]);
+    const amts = decodeAmountsOut(res[0]);
+    o1 = amts && amts.length ? amts[amts.length - 1] : null;
+  }
+  if (o1 == null || o1 <= 0n) return null;
+  if (o1 < (10n ** BigInt(cand.tSrc.decimals))) return null;
+  if (!cand.leg2Path) return { leg1Out: o1, finalOut: o1 };
+  const res2 = await rpcBatch(CHAINS[dstKey], [[CHAINS[dstKey].router, encodeGetAmountsOut(o1, cand.leg2Path)]]);
+  const amts2 = decodeAmountsOut(res2[0]);
+  const v = amts2 && amts2.length ? amts2[amts2.length - 1] : null;
+  return v != null && v > 0n ? { leg1Out: o1, finalOut: v } : null;
 }
 async function evaluateCrossSplit(srcKey, dstKey, amountIn, cands) {
   const enabled = (cands || []).filter((c) => c.enabled);
@@ -946,29 +995,31 @@ async function evaluateCrossSplit(srcKey, dstKey, amountIn, cands) {
   if (!bestSingle || enabled.length < 2 || amountIn <= 0n) return { evaluated: 0, best: null, plan: null, bestSingle };
   const pool = crossSplitPool(enabled);
   if (pool.length < 2) return { evaluated: 0, best: null, plan: null, bestSingle };
-  const seenSym = new Set(); const distinct = [];
-  for (const r of enabled) { if (!seenSym.has(r.pair.sym)) { seenSym.add(r.pair.sym); distinct.push(r); } }
   const allocations = [];
-  for (let i = 0; i < pool.length; i++) for (let j = i + 1; j < pool.length; j++) {
-    for (const p of [90, 80, 70, 60, 50, 40, 30, 20, 10]) allocations.push([{ cand: pool[i], pct: p }, { cand: pool[j], pct: 100 - p }]);
-  }
-  if (distinct.length >= 3) {
-    const t3 = distinct.slice(0, 3);
-    for (let a = 10; a <= 80; a += 10) for (let b = 10; b <= 90 - a; b += 10) {
-      const c = 100 - a - b; if (c < 10) continue;
-      allocations.push([{ cand: t3[0], pct: a }, { cand: t3[1], pct: b }, { cand: t3[2], pct: c }]);
+  const combosOf = (n) => {
+    const out = [];
+    const rec = (start, picked) => {
+      if (picked.length === n) { out.push(picked.slice()); return; }
+      for (let i = start; i <= pool.length - (n - picked.length); i++) { picked.push(i); rec(i + 1, picked); picked.pop(); }
+    };
+    rec(0, []);
+    return out;
+  };
+  for (const n of [2, 3, 4]) {
+    if (pool.length < n) break;
+    for (const idxs of combosOf(n)) {
+      const routes = idxs.map((i) => pool[i]);
+      if (!splitAllocAllowed(routes)) continue;
+      for (const comp of X_SPLIT_COMPS[n]) {
+        allocations.push(routes.map((cand, k) => ({ cand, pct: comp[k] })));
+      }
     }
   }
   const candIdx = new Map(); enabled.forEach((c, i) => candIdx.set(c, i));
   const jobKey = (cand, amount) => candIdx.get(cand) + "|" + amount.toString();
   const jobs = new Map();
   const allocLegs = allocations.map((alloc) => {
-    let used = 0n;
-    const legs = alloc.map((l, i) => {
-      const amt = i === alloc.length - 1 ? amountIn - used : (amountIn * BigInt(l.pct)) / 100n;
-      used += amt;
-      return { cand: l.cand, pct: l.pct, amountIn: amt };
-    });
+    const legs = alloc.map((l) => ({ cand: l.cand, pct: l.pct, amountIn: (amountIn * BigInt(l.pct)) / 100n }));
     for (const leg of legs) if (leg.amountIn > 0n) jobs.set(jobKey(leg.cand, leg.amountIn), { cand: leg.cand, amount: leg.amountIn });
     return legs;
   }).filter((legs) => legs.every((l) => l.amountIn > 0n));
@@ -1010,6 +1061,20 @@ async function evaluateCrossSplit(srcKey, dstKey, amountIn, cands) {
     });
     if (!ok || parts.some((p) => !p)) continue;
     if (!best || total > best.totalOut) best = { parts, totalOut: total };
+  }
+  if (best) {
+    // display order: largest part first; then fold the floor-rounding dust
+    // into the largest part with one exact re-quote, so the parts sum to
+    // exactly amountIn without overstating any part's quote.
+    best.parts.sort((a, b) => b.pct - a.pct);
+    const dust = amountIn - best.parts.reduce((s, p) => s + p.amountIn, 0n);
+    if (dust > 0n) {
+      const adj = await requoteSplitPart(srcKey, dstKey, best.parts[0].cand, best.parts[0].amountIn + dust);
+      if (adj) {
+        best.parts[0] = { ...best.parts[0], amountIn: best.parts[0].amountIn + dust, leg1Out: adj.leg1Out, finalOut: adj.finalOut };
+        best.totalOut = best.parts.reduce((s, p) => s + p.finalOut, 0n);
+      }
+    }
   }
   const plan = best && best.totalOut > bestSingle.finalOut ? best : null;
   return { evaluated: allocLegs.length, best, plan, bestSingle };
@@ -2378,6 +2443,6 @@ if (typeof document !== "undefined" && document.getElementById && document.getEl
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { CHAINS, STR, LANG, state, parseAmount, formatAmount, formatRate, formatGas, encAddr, encUint, encLegsTail, encodeGetAmountsOut, decodeAmountsOut, buildCandidatePaths, fetchQuotesForTokens, evaluateSplits, buildSwapTx, buildApproveTx, buildSplitTx, applySlippageBps, fetchTokenMeta, tokenById, allTokens, symbolFor, onQuote, onCaAdd, selectRoute, selectSplit, selectedRoute, setChain, estimateGasUnitsSingle, estimateGasUnitsSplit, splitExecutable,
     BRIDGE_PAIRS, BRIDGE_MAILBOX, bridgePairBySym, fetchBestRoute, fetchRoutesOnly, attachImpactsMulti, buildBridgeTx, decodeBridgeTxData, encodeRecipient32, fetchBridgeNativeQuote, fetchBridgeDelivered, readTokenBalance, extractMessageId, quoteCrossPlan, requotePathExact, serializeXFlow, restoreXFlow, saveXFlow, loadXFlow, setMode, setXSrc, xDstKey, onXQuote, renderXCandidates, startXFlow, renderXFlow, checkArrival, doXStep1, doXStep4, doXStep4Legacy, onXAbandon,
-    evaluateCrossSplit, crossSplitPool, attributeSplitArrivals, crossSplitPhase, startXSplitFlow, renderXSplitFlow, checkSplitArrival, doXSplitStep1, doXSplitStep2, doXSplitStep4,
+    evaluateCrossSplit, crossSplitPool, splitAllocAllowed, requoteSplitPart, attributeSplitArrivals, crossSplitPhase, startXSplitFlow, renderXSplitFlow, checkSplitArrival, doXSplitStep1, doXSplitStep2, doXSplitStep4,
     qomTokenId, fetchBridgeFeeInQom, quoteArbRoute, quoteArbBoard, renderArbBoard, onArbScan, startArbFlow, startReturnFlow };
 }

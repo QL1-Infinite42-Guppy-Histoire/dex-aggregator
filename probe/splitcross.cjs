@@ -1,12 +1,19 @@
 "use strict";
-/* Cross-chain SPLIT probe v6 (送信はしません):
+/* Cross-chain SPLIT probe v6/v6.1 (送信はしません):
    - ケースA (ユーザーのスクショ条件): 100 USDT (42 Chain) -> QOM (QL1)。
      親実測: 単一ベスト (中継QOM) 158,939,386,644.5 / 中継BABY 158,726,284,663.2 /
-     50:50 分割 = 173,506,993,671.8 (+9.17%)。evaluateCrossSplit が同等の
-     分割プランを「勝ち」として出すことを確認する。
+     50:50 分割 = 173,506,993,671.8 (+9.17%)。evaluateCrossSplit がそれ以上の
+     分割プランを「勝ち」として出すことを確認する (v6: 40/40/20 = +10.70%)。
    - ケースB (対照): Infinite QOM 10B -> QL1 QOM。親実測では単独ベスト
-     (BABY経由 11.955B, +19.5%) が全ての分割 (最良でも ≒+16%) に勝つ。
+     (BABY経由 11.955B, +19.5%) が全ての分割 (最良でも -0.32%) に負けない。
      探索が正直に「分割プランなし (単一が最良)」と結論することを確認する。
+     v6.1 の同一中継ルール (交換2が実在する中継は複数パートにしない) により、
+     BABY バリアント同士の見かけ +0.33% は探索対象から外れている。
+   - ケースC (v6.1): 1,000 USDT -> QOM (QL1)。v6 では中継ごとの最良だけが
+     候補で、プラン (70/20/10) = 1,139.34B に leg1 USDT→FISH→QOM のパートが
+     入らなかった。親実測: R1 50/R2 50 = 1,171.64B、R1 40/R2 30/BABY 20/
+     FATHER 10 = 1,290.68B (+38.5%)。拡張した探索が R2 パートを含む
+     1,270B 以上のプランを出すことを確認する。
    - calldata 照合: 分割プランの1パートについて交換1 tx を組み立て、
      amountIn ワードがパート金額 (全体額ではない) であることと、
      パスがそのパートの保存パスと一致することを復号して確認する。 */
@@ -81,6 +88,27 @@ const refDiff = (raw, refFloat) => ((F18(raw) / refFloat - 1) * 100).toFixed(2) 
   console.log("最良の分割:", xsB.best && formatAmount(xsB.best.totalOut, 18, 2), "QOM (単一ベスト比:", xsB.best ? pctVs(xsB.best.totalOut, enB[0].finalOut).toFixed(2) + "%" : "—", ")");
   if (xsB.best) for (const p of xsB.best.parts) console.log(`   ${p.pct}% [中継 ${p.cand.pair.sym}] => ${formatAmount(p.finalOut, 18, 2)} QOM`);
   console.log("★ 正直チェック: 分割プランを出さない (単一ベストが最良) =", xsB.plan === null);
+
+  /* ================= ケースC (v6.1): 1,000 USDT -> QOM (QL1) ================= */
+  const amtC = parseAmount("1000", fromA.decimals);
+  console.log("\n=== ケースC (v6.1): 1,000 USDT (42 Chain) -> QOM (QL1) ===");
+  const candsC = await app.quoteCrossPlan("infinite", fromA, "ql1", toA, amtC);
+  const enC = candsC.filter((c) => c.enabled);
+  const bestSingleC = enC[0];
+  console.log("単一ベスト:", fullLabel(bestSingleC), "=>", formatAmount(bestSingleC.finalOut, 18, 2), "QOM (親実測 931,938,815,018.81)");
+  const FISH_A = app.tokenById("infinite", "fish").address.toLowerCase();
+  const isR2 = (cand) => cand.pair.sym === "QOM" && cand.leg1Path && cand.leg1Path.length === 3 && cand.leg1Path[1].toLowerCase() === FISH_A;
+  const r2 = enC.find(isR2);
+  console.log("R2 (中継QOM・leg1 USDT→FISH→QOM) 単独:", r2 && formatAmount(r2.finalOut, 18, 2), "QOM (親実測 846,349,806,769.16)");
+  const xsC = await app.evaluateCrossSplit("infinite", "ql1", amtC, candsC);
+  console.log("分割探索: 評価した配分数:", xsC.evaluated, "| 最良の分割:", xsC.best && formatAmount(xsC.best.totalOut, 18, 2), "QOM (親の手計算ベスト 1,290,684,698,120.14)");
+  console.log("分割プラン (勝ちとして出るか):", !!xsC.plan);
+  if (xsC.best) {
+    for (const p of xsC.best.parts) console.log(`   ${p.pct}% [中継 ${p.cand.pair.sym}] ${fullLabel(p.cand)} => ${formatAmount(p.finalOut, 18, 2)} QOM`);
+    console.log("   単一ベスト比:", pctVs(xsC.best.totalOut, bestSingleC.finalOut).toFixed(2) + "%", "| パート金額の合計 == 全体額:", xsC.best.parts.reduce((s, p) => s + p.amountIn, 0n) === amtC);
+  }
+  const planC = xsC.plan;
+  console.log("★ R2 パートを含む:", !!(planC && planC.parts.some((p) => isR2(p.cand))), "| 合計 >= 1,270B QOM:", !!(planC && planC.totalOut >= 1270n * 10n ** 27n));
 
   /* ================= calldata 照合 (ケースAの分割パート) ================= */
   console.log("\n--- calldata 照合: 分割パートの交換1 (パート金額で組む) ---");

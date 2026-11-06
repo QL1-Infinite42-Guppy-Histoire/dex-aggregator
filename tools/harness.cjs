@@ -266,6 +266,51 @@ function loadPage(lang, seedStore) {
   const xsB = jp6c.app.state.xSplit;
   console.log("[V6-JP caseB] 10B QOM: best single via:", jp6c.app.state.xCandidates.find((c) => c.enabled).pair.sym, "| best split vs single:", xsB && xsB.best ? ((Number(xsB.best.totalOut) / Number(xsB.bestSingle.finalOut) - 1) * 100).toFixed(2) + "%" : null, "| plan is null (single wins):", !!xsB && xsB.plan === null, "| split-lost note shown:", jp6c.els.xCandidates.innerHTML.includes("単一ルートがいちばん"));
 
+  // ---- v6.1: case C (1,000 USDT) — same-intermediate (QOM) path variants in one split plan ----
+  const jp61 = loadPage("ja", {});
+  jp61.app.state.account = "0x1111111111111111111111111111111111111111";
+  jp61.app.setMode("cross"); jp61.app.setXSrc("infinite");
+  jp61.els.xFromToken.value = "usdt"; jp61.els.xToToken.value = "native"; jp61.els.xAmount.value = "1000";
+  await jp61.app.onXQuote();
+  const xsC = jp61.app.state.xSplit;
+  const usdtA = jp61.app.tokenById("infinite", "usdt").address.toLowerCase();
+  const fishA = jp61.app.tokenById("infinite", "fish").address.toLowerCase();
+  const qomA = jp61.app.tokenById("infinite", "qom").address.toLowerCase();
+  const isR2Part = (p) => p.cand.pair.sym === "QOM" && Array.isArray(p.cand.leg1Path) && p.cand.leg1Path.length === 3 &&
+    p.cand.leg1Path[0].toLowerCase() === usdtA && p.cand.leg1Path[1].toLowerCase() === fishA && p.cand.leg1Path[2].toLowerCase() === qomA;
+  console.log("\n[V6.1-JP caseC] plan:", !!(xsC && xsC.plan), "| total:", xsC && xsC.plan && jp61.app.formatAmount(xsC.plan.totalOut, 18, 2), "QOM | >= 1,270B:", !!(xsC && xsC.plan && xsC.plan.totalOut >= 1270n * 10n ** 27n), "| vs single:", xsC && xsC.plan ? ((Number(xsC.plan.totalOut) / Number(xsC.bestSingle.finalOut) - 1) * 100).toFixed(2) + "%" : null);
+  console.log("[V6.1-JP caseC] plan includes R2 part (leg1 USDT->FISH->QOM):", !!(xsC && xsC.plan && xsC.plan.parts.some(isR2Part)), "| parts:", xsC && xsC.plan && xsC.plan.parts.map((p) => p.pct + "%:" + p.cand.pair.sym).join(" + "));
+  if (xsC && xsC.plan) {
+    await jp61.app.startXSplitFlow();
+    const sfC = jp61.app.state.xflow;
+    const qomParts = sfC ? sfC.parts.filter((p) => p.sym === "QOM") : [];
+    const distinctLeg1 = new Set(qomParts.map((p) => JSON.stringify((p.leg1Path || []).map((a) => a.toLowerCase()))));
+    console.log("[V6.1-JP caseC] split flow: parts:", sfC && sfC.parts.length, "| same-intermediate QOM parts:", qomParts.length, "| distinct leg1 paths among them:", distinctLeg1.size, "| pct sum:", sfC && sfC.parts.reduce((s, p) => s + p.pct, 0), "| amounts sum == amountIn:", !!sfC && sfC.parts.reduce((s, p) => s + BigInt(p.amountIn), 0n).toString() === sfC.amountIn, "| persisted:", (jp61.store["dexagg_xflow_v1"] || "").includes('"kind":"split"'));
+    const jp61b = loadPage("ja", jp61.store);
+    const rsfC = jp61b.app.loadXFlow();
+    console.log("[V6.1-JP caseC reload] restored:", rsfC && rsfC.kind, "| QOM leg1 paths kept distinct:", !!rsfC && JSON.stringify(rsfC.parts.map((p) => p.leg1Path)) === JSON.stringify(sfC.parts.map((p) => p.leg1Path)));
+  }
+  // same-intermediate phase progression (synthetic flow parts, pure functions):
+  // two QOM parts share the intermediate token (leg2 identity) + one BABY part (real leg2).
+  const E18s = (n) => (BigInt(n) * 10n ** 18n).toString();
+  const sparts = [
+    { sym: "QOM", leg2Path: null, step: 0, bridgedAmount: E18s(300), arrivedAmt: null, arrivedFlag: false },
+    { sym: "QOM", leg2Path: null, step: 0, bridgedAmount: E18s(200), arrivedAmt: null, arrivedFlag: false },
+    { sym: "BABY", leg2Path: ["0xa", "0xb"], step: 0, bridgedAmount: E18s(50), arrivedAmt: null, arrivedFlag: false },
+  ];
+  const sflow = { kind: "split", parts: sparts };
+  const phaseSeq = [jp6.app.crossSplitPhase(sflow)];
+  for (const p of sparts) p.step = 1; phaseSeq.push(jp6.app.crossSplitPhase(sflow));
+  for (const p of sparts) p.step = 2; phaseSeq.push(jp6.app.crossSplitPhase(sflow));
+  // arrivals: QOM over-delivers by 5 (dust), BABY exact -> attribute, then apply
+  // checkSplitArrival's transition (flagged: leg2 ? step 3 : step 4)
+  jp6.app.attributeSplitArrivals(sparts, { QOM: 505n * 10n ** 18n, BABY: 50n * 10n ** 18n });
+  const attrOk = sparts[0].arrivedAmt === E18s(300) && sparts[0].arrivedFlag && sparts[1].arrivedAmt === E18s(205) && sparts[1].arrivedFlag && sparts[2].arrivedAmt === E18s(50) && sparts[2].arrivedFlag;
+  for (const p of sparts) if (p.step === 2 && p.arrivedFlag) p.step = p.leg2Path ? 3 : 4;
+  phaseSeq.push(jp6.app.crossSplitPhase(sflow));
+  sparts[2].step = 4; phaseSeq.push(jp6.app.crossSplitPhase(sflow));
+  console.log("[V6.1] same-sym attribution (QOM parts in order, last takes remainder+dust):", attrOk, "| phase progression 1,2,3,4,done:", JSON.stringify(phaseSeq) === JSON.stringify([1, 2, 3, 4, "done"]), "| seq:", phaseSeq.join(","));
+
   const en6 = loadPage("en", {});
   en6.app.state.account = "0x1111111111111111111111111111111111111111";
   en6.app.setMode("cross"); en6.app.setXSrc("infinite");
@@ -276,6 +321,13 @@ function loadPage(lang, seedStore) {
     await en6.app.startXSplitFlow();
     console.log("[V6-EN] split flow parts:", en6.app.state.xflow.parts.length, "| html has per-part heads:", en6.els.xFlow.innerHTML.includes("Part 1 of"), "| persisted:", (en6.store["dexagg_xflow_v1"] || "").includes('"kind":"split"'));
   }
+  // v6.1 EN: case C plan includes the R2 (USDT->FISH->QOM leg1) part too
+  const en61 = loadPage("en", {});
+  en61.app.setMode("cross"); en61.app.setXSrc("infinite");
+  en61.els.xFromToken.value = "usdt"; en61.els.xToToken.value = "native"; en61.els.xAmount.value = "1000";
+  await en61.app.onXQuote();
+  const xsCE = en61.app.state.xSplit;
+  console.log("[V6.1-EN caseC] plan:", !!(xsCE && xsCE.plan), "| includes R2 part:", !!(xsCE && xsCE.plan && xsCE.plan.parts.some(isR2Part)), "| total >= 1,270B:", !!(xsCE && xsCE.plan && xsCE.plan.totalOut >= 1270n * 10n ** 27n));
 
   console.log("\nHARNESS DONE");
 })().catch((e) => { console.error("HARNESS FAILED:", e); process.exit(1); });
