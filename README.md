@@ -1,4 +1,4 @@
-# DEXアグリゲーター（42 Chain / QL1 / 42 Testnet）— v2
+# DEXアグリゲーター（42 Chain / QL1 / 42 Testnet）— v3
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -20,6 +20,44 @@
 4. 好きなプランを選び、MetaMask を接続して交換する
 
 一覧に無いトークンは、CA（コントラクトアドレス）を貼るとチェーンから読み取って追加できます（このブラウザに保存されます）。
+
+## クロスチェーン（v3）
+
+「クロスチェーン」モードでは、QL1 ⇔ 42 Chain の間で
+**交換 → ブリッジ → 交換** を束ねて見積もり、案内どおりに進められます。
+
+- 中継トークンの候補（QOM / BABY / CAW / FATHER / HAWK / KET / O / OSAK）ごとに、
+  送る側の最良ルート見積もり × ブリッジ（手数料0・1:1）× 届く側の最良ルート見積もり を計算し、
+  最終見積もりの多い順に並べます。中継の最適は直感と違うことがあります
+  （実測: QL1 QSWAP → 42 Chain FISH では中継 QOM より OSAK が多く、
+  逆向き FISH → QSWAP では中継 QOM より BABY が約19%多くなりました）。
+- 実行は4ステップのガイド式です（各ステップでウォレット確認が必要、自動送信なし）。
+  進み具合はブラウザ（localStorage）に保存され、画面を閉じても再開できます。
+  到着確認は、届く側チェーンで自分のトークン残高が増えたかを公開RPCで自動チェックします。
+- 最後の交換は到着時点の値段で再見積もりするので、最終見積もりは目安です。
+  到着には数分かかることがあります（実測で約5分40秒の例あり）。
+
+### ブリッジの実在確認（有効範囲の根拠）
+
+有効にしている向き・トークンは、推測ではなく実取引のサンプリングで決めています
+（`tools/bridge/sample_delivery.cjs`、結果は `tools/bridge/sampling_results.json`）。
+
+- 方法: 各ルーターの直近の実送信トランザクションから Hyperlane のメッセージIDを取り、
+  届け先チェーンのメールボックスで `delivered(messageId)` が true になるかを確認。
+- **QL1 → 42 Chain: 全8トークン × 2件 = 16/16 が配達済み** → 全トークン有効。
+- **42 Chain → QL1: OSAK を除く7トークンで 13/13 が配達済み** → その7トークンを有効。
+  OSAK の 42 Chain 側 BridgeRouter は全履歴が管理txのみで送信実績が0件のため、
+  この向きだけ無効にしています（サイトにも理由を表示）。
+- bridge.zaphod.one の公式統計では「QL1発の配達0件」と出ますが、それは統計側の
+  索引が QL1 を拾えていないためで、チェーン上では上記のとおり配達が確認できています。
+- 手数料: 全ペアでブリッジ手数料0（`quoteBridge` の fee=0 を全ルーターで確認）。
+  42 Chain から送る場合はメッセージ代が別途必要（`quoteNative(766)` 実測で約2.94 [42]、
+  送信時に再取得してそのまま支払う）。QL1 から送る場合はサンプルした全送信が
+  支払い額0だったため、0で送ります。
+- QL1 側の送信は、Zaphod と同じく warp ルーターへ直接 `transferRemote` を呼びます
+  （ラッパー無し）。ルーターが取引トークンをロックボックス経由で xERC20 化する処理は
+  その1件のトランザクションの中で行われます（実送信のログで確認済み）。
+- テストネットには QL1 とのブリッジが確認できていないため、クロスチェーンは本番同士だけです。
 
 ## ルートと分割の探し方
 
@@ -75,6 +113,25 @@ across the top routes (90/10 … 50/50 and 3-way splits), using the DEX router's
 `getAmountsOut` for each partial amount. Plans are ranked by actual output, with price
 impact and estimated gas shown, and the selected single route can be executed via MetaMask.
 
+**New in v3 — cross-chain (QL1 <-> 42 Chain):** a guided mode that quotes
+swap -> bridge -> swap as one plan. For every bridgeable intermediate token
+(QOM / BABY / CAW / FATHER / HAWK / KET / O / OSAK) it combines the best
+same-chain route on the source chain, the Hyperlane (Zaphod) bridge leg
+(fee 0, 1:1), and the best route on the destination chain at current rates,
+then ranks the candidates by final estimate. Execution is a 4-step guided
+flow (each step signed separately, progress persisted in localStorage,
+arrival detected by watching the destination token balance via public RPC;
+the final swap re-quotes at arrival-time prices, so the total is an
+estimate). A direction/token is enabled only where delivery was proven by
+sampling real transactions: message IDs from actual sends were checked
+against the destination mailbox's `delivered()` — QL1 -> 42 Chain 16/16
+(all 8 tokens), 42 Chain -> QL1 13/13 (7 tokens; OSAK has zero sends in its
+42 Chain router's entire history, so that one direction is disabled with
+the reason shown). The bridge site's own stats showing "0 QL1-origin
+deliveries" are an indexer gap; deliveries are confirmed on-chain. Sending
+from 42 Chain additionally pays the messaging fee quoted live by the
+BridgeRouter (measured approx. 2.94 [42]); sampled QL1 sends all paid 0.
+
 Honest limits: executing a split in one transaction requires a dedicated aggregator
 contract. The contract (**SplitSwap**, in `contracts/`) is written and compiled but **not
 deployed yet** — on mainnet, splits are quote-only; on the testnet, deployment is blocked
@@ -90,12 +147,19 @@ https://ql1-infinite42-guppy-histoire.github.io/dex-aggregator/en.html
 
 ```sh
 node probe/probe.cjs               # ライブ見積もり・分割評価・calldata構築の検証（送信はしません）
-node tools/harness.cjs             # 出荷コードを DOM スタブ上で動かす検証（JP/EN/テストネット）
+node probe/crosschain.cjs          # クロスチェーン見積もり（2方向）・ブリッジcalldata・delivered再確認
+node tools/harness.cjs             # 出荷コードを DOM スタブ上で動かす検証（JP/EN/テストネット/クロスチェーン）
 node tools/enumerate_testnet.cjs   # テストネット factory の全ペア列挙
+node tools/bridge/sample_counts.cjs    # ブリッジ各ルーターの実txメソッド集計
+node tools/bridge/sample_delivery.cjs  # 実送信の messageId → 届け先 mailbox の delivered() 照合
 ```
 
 ## 更新履歴
 
+- **v3（2026-11-06）**: クロスチェーン・モード（QL1 ⇔ 42 Chain）。中継トークンごとの
+  交換→ブリッジ→交換の束ね見積もりとランキング、4ステップのガイド式実行（状態は
+  localStorage に保存・再開可、到着は残高監視で自動検出）。有効範囲は実送信の
+  delivered() 照合で決定（QL1→42 は全8トークン、42→QL1 は OSAK を除く7トークン）。
 - **v2（2026-11-06）**: 1inch風パネル（You pay / You receive・レート反転・ガス目安）、
   分割プランの評価と％バー表示、42 テストネット対応（ルーター復旧・実ペアのトークン一覧）、
   英語版（en.html）、SplitSwap コントラクト同梱（未デプロイ）。

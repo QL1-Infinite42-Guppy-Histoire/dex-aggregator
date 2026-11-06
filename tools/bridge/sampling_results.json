@@ -1,0 +1,424 @@
+{
+  "sampledAt": "2026-11-06T04:23:44.315Z",
+  "pairs": {
+    "QOM": {
+      "ql1ToInf": {
+        "sendsSampled": 2,
+        "deliveredTrue": 2,
+        "examples": [
+          {
+            "sendTx": "0xb2bce48158e3a577317ed1752efdb3f278bc31544545d8f215d4aecaabcf82f7",
+            "at": "2026-10-29T10:35:31.000000Z",
+            "valueWei": "0",
+            "messageId": "0x79f09983b6a15cf3fdbe8f3a1f31fc7635108daebb13d9d0a99b978a30065d31",
+            "delivered": true
+          },
+          {
+            "sendTx": "0xbec07b476240793afd2ff661a8ec1338f47acbdc6ba210e217d63e679fb2dd76",
+            "at": "2026-10-29T08:44:59.000000Z",
+            "valueWei": "0",
+            "messageId": "0x868fcea0c17886a74c4862a57dd9de742ee33eee7c26a3848c90d84d57bd1042",
+            "delivered": true
+          }
+        ]
+      },
+      "infToQl1": {
+        "sendsSampled": 2,
+        "deliveredTrue": 2,
+        "examples": [
+          {
+            "sendTx": "0x958da0628e1af722d7e6b07c127fe8577119cb27181798bf727ef051a9b359da",
+            "at": "2026-11-06T01:31:10.000000Z",
+            "valueWei": "2920000000000000000",
+            "messageId": "0x926bb9089bc19987e6fe06784b785f8ba61cf141728272fa33313d23505fb74c",
+            "delivered": true
+          },
+          {
+            "sendTx": "0x0664a81ff2c429df440452730a4a3a2b175e902c80d470f5bde87ac99326996b",
+            "at": "2026-11-01T00:40:42.000000Z",
+            "valueWei": "2500000000000000000",
+            "messageId": "0xf3e08d64733cd301cafec9b4e3391b033e30b78be4342496bb62f1927683371a",
+            "delivered": true
+          }
+        ]
+      },
+      "router": {
+        "token": "0x53465cbbba5b14f5dc00794330f0f4afb30eaa1d",
+        "tokenMatchesSite": true,
+        "paused": false,
+        "quoteNative766_totalNativeWei": "2941645679554057186",
+        "quoteBridge_1token": {
+          "forward": "1000000000000000000",
+          "fee": "0",
+          "totalRequired": "1000000000000000000"
+        }
+      }
+    },
+    "BABY": {
+      "ql1ToInf": {
+        "sendsSampled": 2,
+        "deliveredTrue": 2,
+        "examples": [
+          {
+            "sendTx": "0x4d4cc5d1610d1861d0d80a6b177da3054ef3c5cb3376f4f6d1e8e8f0c84ac00e",
+            "at": "2026-10-31T12:33:59.000000Z",
+            "valueWei": "0",
+            "messageId": "0x28ed6bde3bed70cdb538cb6cc5102805270461d2c2bafea8ab92b581a9e28761",
+            "delivered": true
+          },
+          {
+            "sendTx": "0xfe004b013b7a09e373a7b4d999b5148d1db9fc18c3e839e2e8f4edab053dc51f",
+            "at": "2026-10-29T08:46:06.000000Z",
+            "valueWei": "0",
+            "messageId": "0x1e219db7439cef8258baecaef25c93c0136458b69df53400bb7fe7f6a5e23229",
+            "delivered": true
+          }
+        ]
+      },
+      "infToQl1": {
+        "sendsSampled": 2,
+        "deliveredTrue": 2,
+        "examples": [
+          {
+            "sendTx": "0xd8bd3a469d700da0e054a3a81d891f32e6310be70526517b7889ac61e819aaa6",
+            "at": "2026-11-05T23:57:22.000000Z",
+            "valueWei": "2910000000000000000",
+            "messageId": "0xb65cafceb2fe5b05016010b12f97dbc1fb1a8c5dbb7b1cc74a9f07d526f11f41",
+            "delivered": true
+          },
+          {
+            "sendTx": "0x504e18500928684f40c233762953c16a8dc5a5a61f6b767d6b82d90a78874969",
+            "at": "2026-10-27T06:26:51.000000Z",
+            "valueWei": "2440000000000000000",
+            "messageId": "0x0a6d8133d5abf99c7e611a97143ccc5b2ed6483788d254799e0b310ce961d94c",
+            "delivered": true
+          }
+        ]
+      },
+      "router": {
+        "token": "0x77479226c103cc3c142faff6691bc7f849ce9c92",
+        "tokenMatchesSite": true,
+        "paused": false,
+        "quoteNative766_totalNativeWei": "2941645679554057186",
+        "quoteBridge_1token": {
+          "forward": "1000000000000000000",
+          "fee": "0",
+          "totalRequired": "1000000000000000000"
+        }
+      }
+    },
+    "CAW": {
+      "ql1ToInf": {
+        "sendsSampled": 2,
+        "deliveredTrue": 2,
+        "examples": [
+          {
+            "sendTx": "0x5660fe6cebdf9b74d050f51207742a57d7771001b53bce9e6b0ffbe522300d61",
+            "at": "2026-11-01T00:42:28.000000Z",
+            "valueWei": "0",
+            "messageId": "0x7b74177ffb93efe0921e41f8832429056c3fa80a5dd6e9007fa2132859d6e355",
+            "delivered": true
+          },
+          {
+            "sendTx": "0x72d4d12a2d340cb4e46ec5650a6653d3f718cbd3f1cee6e2b5fee503f48427d3",
+            "at": "2026-10-31T11:31:34.000000Z",
+            "valueWei": "0",
+            "messageId": "0xb8adcfadeccac83a5c20c35299208dbae833a06f6dbbb4d10c60cbb5fdd9866e",
+            "delivered": true
+          }
+        ]
+      },
+      "infToQl1": {
+        "sendsSampled": 2,
+        "deliveredTrue": 2,
+        "examples": [
+          {
+            "sendTx": "0xd00e911ee64241e85bc51ceff76954538a862cf6fe2f0c411dcac536e630194a",
+            "at": "2026-11-05T23:55:18.000000Z",
+            "valueWei": "2910000000000000000",
+            "messageId": "0x3402f77570b5742a96f41b1c7c096fcb0b912358a9ed1deb0c6ca032a82a70da",
+            "delivered": true
+          },
+          {
+            "sendTx": "0x84fb7b4db52f26670a88e40449075aef30755e99b18ad99f852302e885b52684",
+            "at": "2026-09-27T10:26:55.000000Z",
+            "valueWei": "1580000000000000000",
+            "messageId": "0x997d40e6cf5c78724b913e4d10a72b7480b90aeaeba87f6bcc874b38cdd64869",
+            "delivered": true
+          }
+        ]
+      },
+      "router": {
+        "token": "0xce8aee7148daa8943453239c42b7b93f984a49f0",
+        "tokenMatchesSite": true,
+        "paused": false,
+        "quoteNative766_totalNativeWei": "2941645679554057186",
+        "quoteBridge_1token": {
+          "forward": "1000000000000000000",
+          "fee": "0",
+          "totalRequired": "1000000000000000000"
+        }
+      }
+    },
+    "FATHER": {
+      "ql1ToInf": {
+        "sendsSampled": 2,
+        "deliveredTrue": 2,
+        "examples": [
+          {
+            "sendTx": "0x42bd589ff914a45c9570e091c81c8bb5079516e5e09d1bceb48cd7c978915f86",
+            "at": "2026-10-31T12:36:05.000000Z",
+            "valueWei": "0",
+            "messageId": "0x029c8976da379bd31cd2350368a10dc93e8f974ccad3bb75e431a5e3331b79b5",
+            "delivered": true
+          },
+          {
+            "sendTx": "0x01361261c96439ce8d0097179eb8be65f7692b8cc5e9e79a6e88e76b81a0b837",
+            "at": "2026-10-29T08:46:59.000000Z",
+            "valueWei": "0",
+            "messageId": "0x5e598e0f01c549078cee88fd4170a4c378f4c0cbe1e81e747466cb7a04099631",
+            "delivered": true
+          }
+        ]
+      },
+      "infToQl1": {
+        "sendsSampled": 2,
+        "deliveredTrue": 2,
+        "examples": [
+          {
+            "sendTx": "0x6522da7d96fbacb7346b973179a4e8b804230006f47c1adba6aa12cba67d6837",
+            "at": "2026-11-05T23:58:38.000000Z",
+            "valueWei": "2910000000000000000",
+            "messageId": "0xfd362fa1dae821a04eac4c12c54ddfb0d9f9c810df48718389d6a4e392735343",
+            "delivered": true
+          },
+          {
+            "sendTx": "0x5487acf845b92e774411e1587ea2fc507b0197974cab14e423def8fe795e8928",
+            "at": "2026-10-29T22:17:29.000000Z",
+            "valueWei": "2220000000000000000",
+            "messageId": "0x1f6d2050d95a2fde4fafb45f56bda0c7360ef849ea5a266b8018f8c60f6f593a",
+            "delivered": true
+          }
+        ]
+      },
+      "router": {
+        "token": "0x8981f00e92f31a87af12f980383d2217706258e7",
+        "tokenMatchesSite": true,
+        "paused": false,
+        "quoteNative766_totalNativeWei": "2941645679554057186",
+        "quoteBridge_1token": {
+          "forward": "1000000000000000000",
+          "fee": "0",
+          "totalRequired": "1000000000000000000"
+        }
+      }
+    },
+    "HAWK": {
+      "ql1ToInf": {
+        "sendsSampled": 2,
+        "deliveredTrue": 2,
+        "examples": [
+          {
+            "sendTx": "0xfe39af27b00f82a4bec0777f58f8f753fcaad564998088b9fa58ed51767916a0",
+            "at": "2026-10-24T00:36:04.000000Z",
+            "valueWei": "0",
+            "messageId": "0x9cacd6f5ebf51b15342de8517da917a5e46db3f0e5e8c17f8a99b96e58866edd",
+            "delivered": true
+          },
+          {
+            "sendTx": "0xb7917af513676d48712f239ad5059c689cfbd52a5f59a6169fb195b7be09ffcb",
+            "at": "2026-10-16T10:02:52.000000Z",
+            "valueWei": "0",
+            "messageId": "0xbcdcd1fef5d7689f0a7c15a556bf6d2d1bb55a2a161903cfecff784fdbc81aa7",
+            "delivered": true
+          }
+        ]
+      },
+      "infToQl1": {
+        "sendsSampled": 2,
+        "deliveredTrue": 2,
+        "examples": [
+          {
+            "sendTx": "0xa8e943d2a15f2ecd0cd5269075fe5a1e10244ca7e73f066d346f61f583f0da31",
+            "at": "2026-11-06T01:25:13.000000Z",
+            "valueWei": "2920000000000000000",
+            "messageId": "0x146ad5e869590939653bae6208d2bb4c12f5c1cafddef6f6e657531d4c24839c",
+            "delivered": true
+          },
+          {
+            "sendTx": "0x083a37c376c1870fcd8d37daf9717b13c090c00f0600c54bf4994605c7f646f0",
+            "at": "2026-11-05T23:56:34.000000Z",
+            "valueWei": "2910000000000000000",
+            "messageId": "0x5c7e3ba9134bd34312c38a9abc6e6428827dc1b0d75b9f63651fe1603b637aac",
+            "delivered": true
+          }
+        ]
+      },
+      "router": {
+        "token": "0x4e3e79981a64d5678e2e70fd7b4b9550c2b41db2",
+        "tokenMatchesSite": true,
+        "paused": false,
+        "quoteNative766_totalNativeWei": "2941645679554057186",
+        "quoteBridge_1token": {
+          "forward": "1000000000000000000",
+          "fee": "0",
+          "totalRequired": "1000000000000000000"
+        }
+      }
+    },
+    "KET": {
+      "ql1ToInf": {
+        "sendsSampled": 2,
+        "deliveredTrue": 2,
+        "examples": [
+          {
+            "sendTx": "0xffe78788432cec33c198343837ac35c3032ab7db1e72e6357e18b8d352e9de62",
+            "at": "2026-10-29T10:03:57.000000Z",
+            "valueWei": "0",
+            "messageId": "0x9842f15f52c0467054763d17d087da381e64709f8d449dbe347617e26d9dcafa",
+            "delivered": true
+          },
+          {
+            "sendTx": "0xf8866b5c5df52e5045cf5f70d27f608e874aa1e5e28e1354018a18dc1e5a00d7",
+            "at": "2026-10-29T10:01:12.000000Z",
+            "valueWei": "0",
+            "messageId": "0x96522741a332d4d7e1b109217fc0bdb5fd6b25afae7a61c714ef32672f508aa7",
+            "delivered": true
+          }
+        ]
+      },
+      "infToQl1": {
+        "sendsSampled": 1,
+        "deliveredTrue": 1,
+        "examples": [
+          {
+            "sendTx": "0x4eff4c472a7379b3146a6d6179febfa66888c8d41fa8553015cad03b3b146725",
+            "at": "2026-09-27T09:32:20.000000Z",
+            "valueWei": "1590000000000000000",
+            "messageId": "0xc7260097252defbe4e76be8d4d0df4f3b4a75e667d9f05270f425353d86bf990",
+            "delivered": true
+          }
+        ]
+      },
+      "router": {
+        "token": "0xb749d42e6004db590b2f04f32b87485402a061e2",
+        "tokenMatchesSite": true,
+        "paused": false,
+        "quoteNative766_totalNativeWei": "2941645679554057186",
+        "quoteBridge_1token": {
+          "forward": "1000000000000000000",
+          "fee": "0",
+          "totalRequired": "1000000000000000000"
+        }
+      }
+    },
+    "O": {
+      "ql1ToInf": {
+        "sendsSampled": 2,
+        "deliveredTrue": 2,
+        "examples": [
+          {
+            "sendTx": "0x434a19696202b5ee6f1c004d9a0e1d5494cd4c88af06ec1e54adc1732b073e67",
+            "at": "2026-10-31T11:22:15.000000Z",
+            "valueWei": "0",
+            "messageId": "0x0cc90408df6a3779a269fc2b0dc4b2ee3e9a91086a227e7b3f5e81206405302b",
+            "delivered": true
+          },
+          {
+            "sendTx": "0x0baec8c1787da56a1ab25f344b9c66edf788fa3e88de0a03c835aff0f816ce5a",
+            "at": "2026-10-29T22:23:15.000000Z",
+            "valueWei": "0",
+            "messageId": "0x60d73b3c2a3c8736fd94354e8c78ed24d6a9af57de1e02b429190cb91d63362d",
+            "delivered": true
+          }
+        ]
+      },
+      "infToQl1": {
+        "sendsSampled": 2,
+        "deliveredTrue": 2,
+        "examples": [
+          {
+            "sendTx": "0x3ae0a1e89b730b1f0f00a6ab6eb4fd53c49722df687272da895bed7dccd3df73",
+            "at": "2026-11-06T01:24:30.000000Z",
+            "valueWei": "2920000000000000000",
+            "messageId": "0x7f108a1982cb287fea77fbac37ba3cef389de47c681351884f0f9f3f1d35db7e",
+            "delivered": true
+          },
+          {
+            "sendTx": "0x5125a72b6553081911d4ef27b490c13a174306739e2b8fa52ca589bcd3f55147",
+            "at": "2026-10-24T13:49:01.000000Z",
+            "valueWei": "2070000000000000000",
+            "messageId": "0xd21f12e01aa0cbc2cb9cd6c49ffcabc20ad19bbb554e8851eb484e787b9257ee",
+            "delivered": true
+          }
+        ]
+      },
+      "router": {
+        "token": "0xf4c14c0322e361f35eb9465c992fb1c21c91c156",
+        "tokenMatchesSite": true,
+        "paused": false,
+        "quoteNative766_totalNativeWei": "2941645679554057186",
+        "quoteBridge_1token": {
+          "forward": "1000000000000000000",
+          "fee": "0",
+          "totalRequired": "1000000000000000000"
+        }
+      }
+    },
+    "OSAK": {
+      "ql1ToInf": {
+        "sendsSampled": 2,
+        "deliveredTrue": 2,
+        "examples": [
+          {
+            "sendTx": "0x67b3e37e4464634b48b8747df0e3130d5499474f4c23d998eb3f7802fce85a3b",
+            "at": "2026-10-28T08:19:14.000000Z",
+            "valueWei": "0",
+            "messageId": "0xa9f61c3b897397276ebe65fb39f4e47b648db4262de2462214eeaac4caabb8e9",
+            "delivered": true
+          },
+          {
+            "sendTx": "0x80386d5fc6eebb9b64c93059133fc2257644d20a879bce8200df50988032aca1",
+            "at": "2026-10-28T07:57:20.000000Z",
+            "valueWei": "0",
+            "messageId": "0x63e9df6a40f9f3d59f92c4d46cb34e4416004da81905502a3d6bf7fb33469ae1",
+            "delivered": true
+          }
+        ]
+      },
+      "infToQl1": {
+        "sendsSampled": 0,
+        "deliveredTrue": 0,
+        "examples": []
+      },
+      "router": {
+        "token": "0x404f3a213ff6c5d654f4e95e6a7ed098b1c3d3b3",
+        "tokenMatchesSite": true,
+        "paused": false,
+        "quoteNative766_totalNativeWei": "2941645679554057186",
+        "quoteBridge_1token": {
+          "forward": "1000000000000000000",
+          "fee": "0",
+          "totalRequired": "1000000000000000000"
+        }
+      }
+    }
+  },
+  "qomTimingQl1ToInf": {
+    "sendTx": "0xb2bce48158e3a577317ed1752efdb3f278bc31544545d8f215d4aecaabcf82f7",
+    "recipient": "0xa33e223bcf1bb82d475ea29a11f3add9c2e73a23",
+    "amount": "600968022388000000000000000000",
+    "arrival": null
+  },
+  "qomTimingInfToQl1": {
+    "sendTx": "0x958da0628e1af722d7e6b07c127fe8577119cb27181798bf727ef051a9b359da",
+    "recipient": "0x0e2e4b54a1e2ff313b91ea2f5bca3b6152a592b0",
+    "amount": "668015865141610596672377852952",
+    "arrivalWQOM": {
+      "arrivalTx": "0xb9096d1b48062eb3a25a602d4644e37d095077d8e7911e48ca4b4d26dd02cdd4",
+      "at": "2026-11-06T01:36:47.000000Z",
+      "deltaSec": 337,
+      "token": "WQOM"
+    }
+  }
+}

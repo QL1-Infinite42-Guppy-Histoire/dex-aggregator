@@ -24,6 +24,11 @@
     <button id="chainTest" type="button" class="chain-btn">42 Testnet</button>
   </div>
   <p id="chainNote" class="count"></p>
+  <div class="chain-row" style="margin-top:8px">
+    <button id="modeSame" type="button" class="chain-btn active">Same-chain</button>
+    <button id="modeCross" type="button" class="chain-btn">Cross-chain</button>
+  </div>
+  <p id="modeNote" class="count">Cross-chain is between QL1 and 42 Chain (not available on the testnet).</p>
   <div class="connect-row">
     <button id="connectBtn" type="button">Connect wallet (MetaMask)</button>
     <span id="accountLine" class="count">Not connected (quotes work without a wallet)</span>
@@ -31,7 +36,7 @@
   <p id="status" class="status"></p>
 </section>
 
-<section class="panel swap-panel">
+<section class="panel swap-panel" id="swapPanel">
   <h2>Swap</h2>
 
   <div class="pay-box">
@@ -84,7 +89,36 @@
   <p class="count">Swaps are sent with a 20-minute deadline. The first time you use a token, your wallet will ask for a spending approval. Gas figures are estimates.</p>
 </section>
 
-<section class="panel">
+<section class="panel" id="crossPanel" style="display:none">
+  <h2>Cross-chain swap (QL1 &lt;-&gt; 42 Chain)</h2>
+  <p class="count">Swap into a token on the other chain. The flow has 4 steps — swap, bridge send, wait for arrival, final swap — and you confirm (sign) each step yourself. Nothing is sent automatically. Progress is saved in this browser, so you can close the page and resume.</p>
+  <div class="fld">
+    <span>Source chain -&gt; destination chain</span>
+    <div class="chain-row" style="margin-top:6px">
+      <button id="xSrcQl1" type="button" class="chain-btn active">From QL1</button>
+      <button id="xSrcInf" type="button" class="chain-btn">From 42 Chain</button>
+      <span class="count">-&gt; <b id="xDstLabel">42 Chain</b></span>
+    </div>
+  </div>
+  <label class="fld">Token you pay (on the source chain)
+    <select id="xFromToken" aria-label="Token you pay (cross-chain)"></select>
+  </label>
+  <p id="xFromBalance" class="count"></p>
+  <label class="fld">Amount
+    <input id="xAmount" type="text" inputmode="decimal" autocomplete="off" placeholder="0.0" aria-label="Amount (cross-chain)">
+  </label>
+  <label class="fld">Token you receive (on the destination chain)
+    <select id="xToToken" aria-label="Token you receive (cross-chain)"></select>
+  </label>
+  <button id="xQuoteBtn" type="button" class="big">Compare cross-chain</button>
+  <p id="xStatus" class="status"></p>
+  <div id="xCandidates" class="route-list"></div>
+  <div id="xFlow"></div>
+  <button id="xAbandon" type="button" style="display:none;margin-top:10px">Abandon (clear progress)</button>
+  <p class="count">Only tokens with verified bridge deliveries can be used as the bridge token (QOM / BABY / CAW / FATHER / HAWK / KET / O / OSAK — except OSAK from 42 Chain to QL1, where no sends could be verified). The bridge fee is 0. Sending from 42 Chain also costs a messaging fee (approx. 2.94 [42], re-fetched at send time); sending from QL1 measured 0. Arrival can take several minutes (one measured case took about 5 minutes).</p>
+</section>
+
+<section class="panel" id="caPanel">
   <h2>Add a token by contract address</h2>
   <p class="count">If a token is not in the list, paste its contract address (CA) and it will be read from the chain and added. Added tokens are saved in this browser.</p>
   <div class="ca-row">
@@ -104,11 +138,12 @@
     <li>"Price impact" is the difference between a no-fee estimate from pool reserves and the real quote (fees + size impact). Gas figures are estimates too.</li>
     <li>Small pools can move between quote and execution. Try a small amount first before swapping a large one.</li>
     <li>This site takes no fee. Swaps talk directly to each chain's DEX router (42 Chain: Don't Panic / QL1: QomSwap).</li>
+    <li><b>Cross-chain (v3)</b>: bridging uses Hyperlane (Zaphod Bridge). A direction/token is enabled only where delivery was proven on-chain: message IDs were taken from real send transactions and checked against the destination chain's mailbox <code>delivered()</code> (sampled 2026-11-06: QL1 -&gt; 42 Chain 16/16 across all 8 tokens; 42 Chain -&gt; QL1 13/13 across 7 tokens, excluding OSAK, whose 42 Chain router has no sends at all in its history, so that one direction is disabled). The bridge site's own stats showing "0 QL1-origin deliveries" are an indexer gap — deliveries are confirmed on-chain. The final swap executes at arrival-time prices, so the final figure is an estimate.</li>
   </ul>
 </section>
 
 <footer>
-  <p>v2 / Data: 42 Chain RPC / QL1 RPC / 42 Testnet RPC (read directly from the pools). Source code is published under the MIT license.</p>
+  <p>v3 / Data: 42 Chain RPC / QL1 RPC / 42 Testnet RPC (read directly from the pools). Source code is published under the MIT license.</p>
 </footer>
 <script src="app.js"></script>
 </body>

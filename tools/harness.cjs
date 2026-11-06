@@ -4,9 +4,9 @@
 const fs = require("fs");
 const vm = require("vm");
 
-const IDS = ["chainInf", "chainQl1", "chainTest", "testnetBanner", "chainNote", "connectBtn", "accountLine", "status", "fromToken", "toToken", "fromBalance", "toBalance", "amountIn", "flipBtn", "quoteBtn", "planArea", "routeList", "splitNote", "rateLine", "rateInvertBtn", "gasLine", "receiveOut", "minLine", "swapBtn", "txResult", "slipCustom", "caInput", "caAddBtn", "caMsg"];
+const IDS = ["chainInf", "chainQl1", "chainTest", "testnetBanner", "chainNote", "connectBtn", "accountLine", "status", "fromToken", "toToken", "fromBalance", "toBalance", "amountIn", "flipBtn", "quoteBtn", "planArea", "routeList", "splitNote", "rateLine", "rateInvertBtn", "gasLine", "receiveOut", "minLine", "swapBtn", "txResult", "slipCustom", "caInput", "caAddBtn", "caMsg", "modeSame", "modeCross", "modeNote", "swapPanel", "caPanel", "crossPanel", "xSrcInf", "xSrcQl1", "xDstLabel", "xFromToken", "xToToken", "xFromBalance", "xAmount", "xQuoteBtn", "xStatus", "xCandidates", "xFlow", "xAbandon"];
 
-function loadPage(lang) {
+function loadPage(lang, seedStore) {
   function makeEl(id) {
     return {
       id, value: "", innerHTML: "", textContent: "", disabled: false, style: {},
@@ -18,11 +18,11 @@ function loadPage(lang) {
   }
   const els = {};
   for (const id of IDS) els[id] = makeEl(id);
-  const store = {};
+  const store = seedStore || {};
   const sandbox = {
-    console, setTimeout, BigInt, JSON, Math, Number, String, Array, Object, Map, Set, Promise, RegExp, Error, TextDecoder, URLSearchParams,
+    console, setTimeout, setInterval, clearInterval, BigInt, JSON, Math, Number, String, Array, Object, Map, Set, Promise, RegExp, Error, TextDecoder, URLSearchParams,
     fetch: (...a) => fetch(...a),
-    localStorage: { getItem: (k) => store[k] || null, setItem: (k, v) => { store[k] = v; } },
+    localStorage: { getItem: (k) => store[k] || null, setItem: (k, v) => { store[k] = v; }, removeItem: (k) => { delete store[k]; } },
     document: { documentElement: { lang }, getElementById: (id) => els[id] || null, querySelectorAll: () => [], addEventListener: () => {} },
     window: {},
     module: { exports: {} },
@@ -88,6 +88,51 @@ function loadPage(lang) {
   await eapp.onQuote();
   const ese = eapp.state.splitEval;
   console.log("[EN-Testnet] ARBA->ARBB routes:", eapp.state.routes.length, "| split evaluated:", ese && ese.evaluated, "| best split:", ese && ese.best ? eapp.formatAmount(ese.best.totalOut, 18, 6) : null, "| single best:", eapp.formatAmount(eapp.state.routes[0].amountOut, 18, 6), "| plan:", !!(ese && ese.plan));
+
+  /* ================= v3 cross-chain (JP) ================= */
+  console.log("\n[V3-JP] --- cross-chain ---");
+  app.state.account = "0x1111111111111111111111111111111111111111";
+  app.setMode("cross");
+  console.log("[V3-JP] mode:", app.state.mode, "| crossPanel display:", JSON.stringify(els.crossPanel.style.display), "| swapPanel display:", JSON.stringify(els.swapPanel.style.display), "| xSrc:", app.state.xSrc, "| dstLabel:", els.xDstLabel.textContent);
+  els.xFromToken.value = "qswap"; els.xToToken.value = "fish"; els.xAmount.value = "10000";
+  await app.onXQuote();
+  const xc = app.state.xCandidates;
+  const enC = xc.filter((c) => c.enabled);
+  console.log("[V3-JP] candidates:", xc.length, "| enabled:", enC.length, "| sorted desc:", enC.every((c, i) => i === 0 || enC[i - 1].finalOut >= c.finalOut), "| best via:", enC[0] && enC[0].pair.sym, "=>", enC[0] && app.formatAmount(enC[0].finalOut, 18, 4), "FISH");
+  console.log("[V3-JP] OSAK enabled (QL1->INF):", xc.find((c) => c.pair.sym === "OSAK").enabled, "| xStatus:", els.xStatus.textContent.slice(0, 60));
+  console.log("[V3-JP] candidates html has cards:", (els.xCandidates.innerHTML.match(/route-card/g) || []).length, "| has start btn:", els.xCandidates.innerHTML.includes("x-start"));
+  await app.startXFlow(enC[0].pair.sym);
+  const fl = app.state.xflow;
+  console.log("[V3-JP] flow created: step", fl && fl.step, "| sym", fl && fl.sym, "| persisted:", Boolean(jp.store["dexagg_xflow_v1"]), "| xFlow html has step1:", els.xFlow.innerHTML.includes("ステップ1"), "| abandon visible:", JSON.stringify(els.xAbandon.style.display));
+  // reload simulation: fresh page over the same localStorage store
+  const jp2 = loadPage("ja", jp.store);
+  const restored = jp2.app.loadXFlow();
+  console.log("[V3-JP reload] restored flow:", restored && restored.sym, "step", restored && restored.step, "| serialize/restore roundtrip:", JSON.stringify(jp2.app.restoreXFlow(jp2.app.serializeXFlow(restored))) === JSON.stringify(restored));
+  jp2.app.setMode("cross");
+  console.log("[V3-JP reload] xFlow re-rendered with resume note:", jp2.els.xFlow.innerHTML.includes("続き"));
+  // arrival check negative case (step 3, nothing arrived)
+  jp2.app.state.account = "0x1111111111111111111111111111111111111111";
+  jp2.app.state.xflow.step = 3; jp2.app.state.xflow.baselineDst = "0"; jp2.app.state.xflow.bridgeAt = Date.now();
+  const arr = await jp2.app.checkArrival(false);
+  console.log("[V3-JP] checkArrival with no arrival returns:", arr, "| step stays:", jp2.app.state.xflow.step);
+  jp2.app.onXAbandon();
+  console.log("[V3-JP] after abandon: flow", jp2.app.state.xflow, "| store cleared:", !jp.store["dexagg_xflow_v1"]);
+  // testnet guard: cross mode must fall back to same-chain
+  jp2.app.setMode("cross"); jp2.app.setChain("testnet");
+  console.log("[V3-JP] testnet guard: mode after setChain(testnet) =", jp2.app.state.mode);
+
+  /* ================= v3 cross-chain (EN) ================= */
+  const en2 = loadPage("en");
+  en2.app.setMode("cross");
+  en2.els.xFromToken.value = "qswap"; en2.els.xToToken.value = "fish"; en2.els.xAmount.value = "10000";
+  await en2.app.onXQuote();
+  console.log("\n[V3-EN] xStatus:", en2.els.xStatus.textContent.slice(0, 80));
+  console.log("[V3-EN] candidates html has 'Via':", en2.els.xCandidates.innerHTML.includes("Via"), "| best via:", en2.app.state.xCandidates.find((c) => c.enabled).pair.sym);
+  en2.app.setXSrc("infinite");
+  en2.els.xFromToken.value = "fish"; en2.els.xToToken.value = "qswap"; en2.els.xAmount.value = "10";
+  await en2.app.onXQuote();
+  const xcE = en2.app.state.xCandidates;
+  console.log("[V3-EN] INF->QL1: OSAK disabled:", !xcE.find((c) => c.pair.sym === "OSAK").enabled, "| reason len>0:", (xcE.find((c) => c.pair.sym === "OSAK").reason || "").length > 0, "| best via:", xcE.find((c) => c.enabled).pair.sym);
 
   console.log("\nHARNESS DONE");
 })().catch((e) => { console.error("HARNESS FAILED:", e); process.exit(1); });
