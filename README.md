@@ -1,4 +1,4 @@
-# DEXアグリゲーター（42 Chain / QL1 / 42 Testnet）— v5
+# DEXアグリゲーター（42 Chain / QL1 / 42 Testnet）— v6
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -67,6 +67,41 @@ v5 から、クロスチェーンの結果は中継ごとの最良1件ではな�
   使えなくなっていた場合は、別のルートへ勝手に切り替えず、理由を表示して止まります。
   v4 以前の保存フロー（パス無し）は従来どおり同一チェーン画面への受け渡しで継続できます。
 - 価格差ボードは従来どおりで、行クリックではその中継の最良全体ルートが選ばれます。
+
+### クロスチェーン分割（v6）
+
+v6 から、クロスチェーンでも **全体ルート同士の分割** を評価します
+（同一チェーン内モードの分割と同じ考え方を、全体ルート単位に広げたもの）。
+
+- 候補は最終見積もり上位の全体ルート（中継が異なるルートを優先、最大4件。
+  直接ブリッジの全体ルートもパート候補に含む）。ペアは全ペア×10%刻み、
+  3分割は中継が異なる上位3件×10%刻み（各パート10%以上）を探索します。
+- 各パートは、その全体ルートの保存パスをそのパートの金額で実際に
+  見積もり直します（交換1 → ブリッジ1:1 → 交換2。交換1の出力がブリッジ
+  最小量未満のパートは不成立）。最良レッグの額の流用はしません。
+- **分割プランのカードは、最良の分割が単一ベスト全体ルートに勝ったときだけ**
+  出ます。負けるときは「今回は単一ルートがいちばん」と小さく表示するだけです。
+  実測の対照（2026-11-06）:
+  - 100 USDT（42 Chain）→ QOM（QL1）: 単一ベスト 158,939,386,644.5 QOM
+    （親実測と一致）。50:50（中継QOM/BABY）= 173,506,993,671.8（+9.17%、
+    親実測と完全一致）。探索の最良は 40/40/20（QOM/BABY/FATHER）=
+    175,951,409,029（**+10.70%**）で、分割プランとして提示されます。
+  - 10B QOM（42 Chain）→ QOM（QL1）: 単独 BABY 経由 11,954,927,955
+    （+19.55%）が最良の分割 11,916,683,987（−0.32%）にも勝ち、
+    **分割プランは出ません**。全ルートが前半 QOM→FISH を共有するため
+    分散効果が薄く、限界レートの高い BABY に寄せ切る方が多い、という
+    実見積もりどおりの結論です。
+- 実行はパートごとのガイド式フローです（状態は localStorage に保存・再開可）:
+  フェーズ1 = パートごとの交換1（保存パスを再見積もりして実行、受け取り量は
+  残高差分で記録）→ フェーズ2 = パートごとのブリッジ → フェーズ3 = 中継
+  トークンごとの到着監視（同じ中継のパートは順番に帰属させ、最後のパートが
+  実際の残り全部を受け取る）→ フェーズ4 = パートごとの交換2（交換2が
+  そのまま受け取りトークンのパートは自動完了）。保存パスが使えなくなった
+  パートは理由を表示して止まり、別ルートへは切り替えません（他パートは続行）。
+- **ブリッジはパートごとに別送信**です。42 Chain 発のメッセージ代
+  （quoteNative、実測約3.07 [42]）はパート数分かかります。カードには
+  合計額を明示します（QL1 発は実測0のまま）。DEX ガスもパート数分です。
+- v3〜v5 の単一ルート保存フローは従来どおり再開できます（復元の互換を維持）。
 
 ### ブリッジの実在確認（有効範囲の根拠）
 
@@ -266,6 +301,27 @@ stop with an explanation rather than switching paths if a stored path
 stops working. Flows saved by v4 (no stored leg-2 path) keep the old
 hand-off behaviour.
 
+**New in v6 — cross-chain split plans:** splits ACROSS full routes are now
+evaluated in cross-chain mode, the same way same-chain mode splits across
+routes. Candidates are the top full routes (distinct bridge tokens first,
+the direct-bridge route included); all pairs in 10% steps plus triples
+among the top 3 distinct-intermediate routes are searched, and every part
+is re-quoted through its own full route at its own amount. A split plan
+card is shown ONLY when the best split beats the best single full route —
+measured contrast (2026-11-06): 100 USDT (42 Chain) -> QOM (QL1), best
+single 158,939,386,644.5 QOM, a 50:50 QOM/BABY split reproduces the
+parent measurement 173,506,993,671.8 (+9.17%) exactly, and the search's
+best (40/40/20 QOM/BABY/FATHER) reaches 175,951,409,029 (+10.70%); while
+at 10B QOM -> QOM (QL1) the single BABY route (11,954,927,955, +19.5%)
+beats every split (best split −0.32% vs it), so no plan is offered.
+Execution is a grouped per-part guided flow (all swap-1s, then all bridge
+sends, then per-token arrival watch with in-order attribution — the last
+part on a token takes the actual remainder — then all swap-2s; identity
+leg-2 parts finish automatically), persisted in localStorage like the
+single-route flow. Each part bridges separately, so a 42 Chain origin
+pays the quoteNative messaging cost once per part; the plan's total is
+shown on the card. v3–v5 saved single-route flows still resume.
+
 Honest limits: executing a split in one transaction requires a dedicated aggregator
 contract. The contract (**SplitSwap**, in `contracts/`) is written and compiled but **not
 deployed yet** — on mainnet, splits are quote-only; on the testnet, deployment is blocked
@@ -284,6 +340,7 @@ node probe/probe.cjs               # ライブ見積もり・分割評価・call
 node probe/crosschain.cjs          # クロスチェーン見積もり（2方向）・ブリッジcalldata・delivered再確認
 node probe/arb.cjs                 # 価格差: 具体例 (42->QOM)・直接ブリッジ比較・ボード全行スナップショット
 node probe/fullroutes.cjs          # v5全体ルート: 1000 USDT->QL1 QOM の4例照合・全中継カバー・非ベストルートのcalldata照合
+node probe/splitcross.cjs          # v6クロス分割: 100 USDT の勝ちケース (+10.7%)・10B QOM の対照 (単一勝利)・パートcalldata照合
 node tools/harness.cjs             # 出荷コードを DOM スタブ上で動かす検証（JP/EN/テストネット/クロスチェーン）
 node tools/enumerate_testnet.cjs   # テストネット factory の全ペア列挙
 node tools/bridge/sample_counts.cjs    # ブリッジ各ルーターの実txメソッド集計
@@ -292,6 +349,14 @@ node tools/bridge/sample_delivery.cjs  # 実送信の messageId → 届け先 ma
 
 ## 更新履歴
 
+- **v6（2026-11-06）**: クロスチェーン分割プラン。全体ルート同士の割合配分を
+  実見積もりで探索し（ペア全組×10%刻み＋中継が異なる上位3件の3分割）、
+  単一ベストに勝ったときだけ分割プランのカードを提示（100 USDT→QL1 QOM で
+  +10.70%）。負けるケースでは正直に単一推奨のまま（10B QOM→QL1 QOM では
+  単独 BABY 経由が全分割に勝利し、プランは出ない）。実行はパートごとの
+  グループフェーズ型ガイドフロー（交換1群→ブリッジ群→中継ごとの到着監視と
+  順序帰属→交換2群、localStorage 保存・再開可）。ブリッジはパートごとに
+  別送信で、42 Chain 発のメッセージ代はパート数分（カードに合計明示）。
 - **v5（2026-11-06）**: クロスチェーン結果を「全体ルート」単位に変更。中継ごとに
   交換1・交換2の上位バリアントを組み合わせた全体ルートを最終額順に並べ（中継ごとに
   最大4件・全体24件）、通り道全体を1本の鎖で表示。選んだ全体ルートのパスがフローに

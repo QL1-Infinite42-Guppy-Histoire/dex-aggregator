@@ -82,6 +82,8 @@ footer { max-width: 760px; margin: 0 auto; padding: 4px 16px 28px; color: #8d99a
 .xflow { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
 .xstep { background: #10182b; border: 1px solid #2b3857; border-radius: 10px; padding: 10px 12px; }
 .xstep.current { border-color: #2470d8; }
+.xpart { border-top: 1px dashed #2b3857; padding: 8px 0 4px; margin-top: 8px; }
+.xpart:first-of-type { border-top: none; margin-top: 4px; }
 .xstep-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .badge-step { background: #232c44; color: #c3cad7; border-radius: 6px; padding: 2px 7px; font-size: 11px; }
 .xstep.current .badge-step { background: #2470d8; color: #fff; }

@@ -1,5 +1,5 @@
 "use strict";
-/* DEXアグリゲーター v5 (42 Chain / QL1 / 42 Testnet)
+/* DEXアグリゲーター v6 (42 Chain / QL1 / 42 Testnet)
    1inch風: 直接・1つ経由・2つ経由の全ルートを getAmountsOut で比較し、
    さらに上位ルートへの「分割」配分も評価して一番多いプランを提示する。
    分割の1tx実行には専用コントラクト (contracts/SplitSwap.sol) が必要。
@@ -9,7 +9,13 @@
    QOM建てで全ブリッジ可能トークン×両方向を実見積もりする価格差ボード。
    v5: クロスチェーンの結果を「全体ルート」単位に変更。中継トークンごとに
    交換1・交換2の上位バリアントを組み合わせた全体ルートを並べ、選んだ
-   全体ルートのパスそのものをガイド実行 (ステップ1/4) で使う。*/
+   全体ルートのパスそのものをガイド実行 (ステップ1/4) で使う。
+   v6: クロスチェーンでも全体ルート同士の「分割」を評価する。1つの取引を
+   複数の全体ルートに割合配分し、各パートをそのルート・その金額で実際に
+   見積もり直して合計する。単一ベストに勝ったときだけ分割プランのカードを
+   出し、実行はパートごとのガイド式フロー (交換1→ブリッジ→着金→交換2 を
+   パート単位で進める)。ブリッジはパートごとに別送信になるため、42 Chain 発
+   のメッセージ代はパート数分かかる (カードとフローに明示)。*/
 
 const NATIVE_PH = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 const WQOM = "0xa26dfbf98dd1a32fae56a3d2b2d60a8a41b0bdf0";
@@ -77,6 +83,19 @@ const STR = {
     xStep4QuoteLine: (amt, sym, label) => "今の見積もり: 約 " + amt + " " + sym + "（ルート: " + label + "）",
     xStep4Identity: "届いたトークンがそのまま受け取りトークンなので、交換は不要です。このまま完了にできます。",
     xStep4IdentityBtn: "完了にする（交換なし）",
+    xSplitStartBtn: "この分割プランではじめる",
+    xSplitWinNote: "分割プランが単一ルートより多くなりました。",
+    xSplitFeeTotalInf: (amt, n) => "ブリッジのメッセージ代の合計: 約 " + amt + " [42]（ブリッジ " + n + " 回分、それぞれにかかります）",
+    xSplitFeeQl1: "ブリッジのメッセージ代は、パートごとに分けても 0 です（実測: QL1側の送信は全て支払い0でした）",
+    xSplitPartsNote: (n) => "交換とブリッジはパートごとに分かれて、それぞれ " + n + " 回ずつ行います（まとめて1回では送りません）",
+    xsStep1Title: "ステップ1: 最初の交換（パートごと）", xsStep2Title: "ステップ2: ブリッジで送る（パートごと）", xsStep4Title: "ステップ4: 最後の交換（パートごと）",
+    xsPartHead: (i, n, pct, sym) => "パート " + (i + 1) + " / " + n + "（" + pct + "%・中継 " + sym + "）",
+    xsReceived: (amt, sym) => "受け取り済み: " + amt + " " + sym,
+    xsResumeNote: "前回の分割プランの続きが残っています。",
+    xsDone: "分割プランの案内は完了しました。",
+    xsDonePartial: (ok, n) => "完了したパートは " + ok + " / " + n + " です。止まったパートには理由を表示しています（すでにブリッジで送った分は、そのまま相手チェーンの自分のアドレスに届きます）。",
+    xsAutoDone: "交換なしで完了（届いたトークンがそのまま受け取りトークンです）",
+    xsStepFailBadge: "失敗",
     xDisabledOsak: "42 Chain → QL1 の OSAK ブリッジは、公式ルーターの送信実績が確認できていないため無効です（QL1 → 42 Chain は実績あり）",
     xDisabledWrap: "QOM のまま送るには WQOM の形が必要で、このサイトでは包み直しが未対応のため、この組み合わせでは使えません（出すトークンで WQOM を選べば使えます）",
     xEstNote: "最終見積もりは今の値段での計算です。ブリッジの到着は数分かかることがあり、最後の交換は到着時点の値段で決まります。",
@@ -178,6 +197,19 @@ const STR = {
     xStep4QuoteLine: (amt, sym, label) => "Current quote: approx. " + amt + " " + sym + " (route: " + label + ")",
     xStep4Identity: "The arrived token already is the token you receive, so no swap is needed. You can simply finish.",
     xStep4IdentityBtn: "Finish (no swap)",
+    xSplitStartBtn: "Start with this split plan",
+    xSplitWinNote: "A split plan beats the best single full route.",
+    xSplitFeeTotalInf: (amt, n) => "Total bridge messaging cost: approx. " + amt + " [42] (" + n + " bridge sends, charged per send)",
+    xSplitFeeQl1: "The bridge messaging cost stays 0 per part (measured: every sampled QL1 send paid 0)",
+    xSplitPartsNote: (n) => "Swaps and bridges run separately for each part (" + n + " of each — they are not sent as one transaction)",
+    xsStep1Title: "Step 1: First swaps (one per part)", xsStep2Title: "Step 2: Bridge sends (one per part)", xsStep4Title: "Step 4: Final swaps (one per part)",
+    xsPartHead: (i, n, pct, sym) => "Part " + (i + 1) + " of " + n + " (" + pct + "%, via " + sym + ")",
+    xsReceived: (amt, sym) => "Received: " + amt + " " + sym,
+    xsResumeNote: "You have an unfinished split plan saved.",
+    xsDone: "This split plan guide is complete.",
+    xsDonePartial: (ok, n) => ok + " of " + n + " parts completed. Stopped parts show their reason (anything already bridged still arrives at your own address on the other chain).",
+    xsAutoDone: "Done with no swap (the arrived token already is the token you receive)",
+    xsStepFailBadge: "Failed",
     xDisabledOsak: "The 42 Chain -> QL1 OSAK bridge is disabled: no sends through the official router could be verified (QL1 -> 42 Chain is verified)",
     xDisabledWrap: "Sending QOM as-is needs it in WQOM form, and wrapping is not supported on this site, so this combination is unavailable (pick WQOM as the token you pay to use it)",
     xEstNote: "The final estimate uses current prices. Bridge arrival can take several minutes, and the last swap executes at arrival-time prices.",
@@ -374,6 +406,7 @@ const state = {
   xflow: null,           // v3: guided flow state (persisted)
   xPollTimer: null,
   xBenchmark: null,      // v4: {sym, kind, finalOut} benchmark of the last cross quote
+  xSplit: null,          // v6: {evaluated, best, plan, bestSingle} cross-chain split evaluation
   arbRows: [],           // v4: last arbitrage board scan rows
   arbStartRaw: null,     // v4: start amount (QOM raw) of the last board scan
 };
@@ -889,6 +922,139 @@ async function quoteCrossPlan(srcKey, fromTok, dstKey, toTok, amountIn) {
   return result;
 }
 
+/* ---------- v6: cross-chain SPLIT evaluation across full routes ----------
+   1つの取引を複数の全体ルートに割合配分する。各パートは「その全体ルートの
+   保存パス」を「そのパートの金額」で実際に見積もり直す (交換1 → ブリッジ1:1 →
+   交換2)。最良レッグの額を流用しない。候補は中継が異なるルートを優先し、
+   直接ブリッジの全体ルートもパート候補に含む。
+   - ペア: 候補プール (最大4件) の全ペア × 10%刻み
+   - 3分割: 中継が異なる上位3件 × 10%刻み (各パート10%以上)
+   同じ (ルート, 金額) の見積もりはキャッシュし、RPC はレッグごとに一括する。
+   plan は「最良の分割が単一ベスト全体ルートに勝ったとき」だけ立つ (正直ルール)。 */
+function crossSplitPool(enabled) {
+  const pool = []; const seenSym = new Set();
+  for (const r of enabled) {
+    if (pool.length >= 4) break;
+    if (!seenSym.has(r.pair.sym)) { seenSym.add(r.pair.sym); pool.push(r); }
+  }
+  if (pool.length < 4) for (const r of enabled) { if (pool.length >= 4) break; if (!pool.includes(r)) pool.push(r); }
+  return pool;
+}
+async function evaluateCrossSplit(srcKey, dstKey, amountIn, cands) {
+  const enabled = (cands || []).filter((c) => c.enabled);
+  const bestSingle = enabled.length ? enabled[0] : null;
+  if (!bestSingle || enabled.length < 2 || amountIn <= 0n) return { evaluated: 0, best: null, plan: null, bestSingle };
+  const pool = crossSplitPool(enabled);
+  if (pool.length < 2) return { evaluated: 0, best: null, plan: null, bestSingle };
+  const seenSym = new Set(); const distinct = [];
+  for (const r of enabled) { if (!seenSym.has(r.pair.sym)) { seenSym.add(r.pair.sym); distinct.push(r); } }
+  const allocations = [];
+  for (let i = 0; i < pool.length; i++) for (let j = i + 1; j < pool.length; j++) {
+    for (const p of [90, 80, 70, 60, 50, 40, 30, 20, 10]) allocations.push([{ cand: pool[i], pct: p }, { cand: pool[j], pct: 100 - p }]);
+  }
+  if (distinct.length >= 3) {
+    const t3 = distinct.slice(0, 3);
+    for (let a = 10; a <= 80; a += 10) for (let b = 10; b <= 90 - a; b += 10) {
+      const c = 100 - a - b; if (c < 10) continue;
+      allocations.push([{ cand: t3[0], pct: a }, { cand: t3[1], pct: b }, { cand: t3[2], pct: c }]);
+    }
+  }
+  const candIdx = new Map(); enabled.forEach((c, i) => candIdx.set(c, i));
+  const jobKey = (cand, amount) => candIdx.get(cand) + "|" + amount.toString();
+  const jobs = new Map();
+  const allocLegs = allocations.map((alloc) => {
+    let used = 0n;
+    const legs = alloc.map((l, i) => {
+      const amt = i === alloc.length - 1 ? amountIn - used : (amountIn * BigInt(l.pct)) / 100n;
+      used += amt;
+      return { cand: l.cand, pct: l.pct, amountIn: amt };
+    });
+    for (const leg of legs) if (leg.amountIn > 0n) jobs.set(jobKey(leg.cand, leg.amountIn), { cand: leg.cand, amount: leg.amountIn });
+    return legs;
+  }).filter((legs) => legs.every((l) => l.amountIn > 0n));
+  // round 1: leg-1 quotes on the source chain (identity leg 1 = direct bridge)
+  const jobEntries = [...jobs.entries()];
+  const leg1Out = new Map();
+  const srcCalls = [], srcKeys = [];
+  for (const [key, job] of jobEntries) {
+    if (!job.cand.leg1Path) leg1Out.set(key, job.amount);
+    else { srcKeys.push(key); srcCalls.push([CHAINS[srcKey].router, encodeGetAmountsOut(job.amount, job.cand.leg1Path)]); }
+  }
+  if (srcCalls.length) {
+    const res = await rpcBatch(CHAINS[srcKey], srcCalls);
+    srcKeys.forEach((key, k) => { const amts = decodeAmountsOut(res[k]); leg1Out.set(key, amts && amts.length ? amts[amts.length - 1] : null); });
+  }
+  // round 2: leg-2 quotes on the destination chain (bridge minimum enforced on leg-1 out)
+  const finalOut = new Map();
+  const dstCalls = [], dstKeys = [];
+  for (const [key, job] of jobEntries) {
+    const o1 = leg1Out.get(key);
+    if (o1 == null || o1 <= 0n) continue;
+    if (o1 < (10n ** BigInt(job.cand.tSrc.decimals))) continue;
+    if (!job.cand.leg2Path) finalOut.set(key, o1);
+    else { dstKeys.push(key); dstCalls.push([CHAINS[dstKey].router, encodeGetAmountsOut(o1, job.cand.leg2Path)]); }
+  }
+  if (dstCalls.length) {
+    const res = await rpcBatch(CHAINS[dstKey], dstCalls);
+    dstKeys.forEach((key, k) => { const amts = decodeAmountsOut(res[k]); const v = amts && amts.length ? amts[amts.length - 1] : null; if (v != null && v > 0n) finalOut.set(key, v); });
+  }
+  let best = null;
+  for (const legs of allocLegs) {
+    let total = 0n, ok = true;
+    const parts = legs.map((leg) => {
+      const key = jobKey(leg.cand, leg.amountIn);
+      const fo = finalOut.get(key);
+      if (fo == null) { ok = false; return null; }
+      total += fo;
+      return { cand: leg.cand, pct: leg.pct, amountIn: leg.amountIn, leg1Out: leg1Out.get(key), finalOut: fo };
+    });
+    if (!ok || parts.some((p) => !p)) continue;
+    if (!best || total > best.totalOut) best = { parts, totalOut: total };
+  }
+  const plan = best && best.totalOut > bestSingle.finalOut ? best : null;
+  return { evaluated: allocLegs.length, best, plan, bestSingle };
+}
+
+/* ---------- v6: split-flow arrival attribution (pure; harness-tested) ----------
+   同じ中継トークンのパートが複数ある場合、到着分はパートの順番どおりに
+   「そのパートがブリッジした見込み量」まで割り当てる。最後のパートだけは、
+   合計が見込み合計 (許容誤差内) に達した時点で実際の残り全部を受け取る
+   (過剰配達や端数が宙に浮かないように)。
+   parts: [{sym, bridgedAmount(string|null), arrivedAmt, arrivedFlag}]
+   arrivedBySym: {sym: BigInt (基準残高を引いた到着合計)} */
+function attributeSplitArrivals(parts, arrivedBySym) {
+  const groups = new Map();
+  for (const p of parts) {
+    if (p.bridgedAmount == null) continue;
+    if (!groups.has(p.sym)) groups.set(p.sym, []);
+    groups.get(p.sym).push(p);
+  }
+  for (const [sym, group] of groups) {
+    let remaining = BigInt(arrivedBySym[sym] != null ? arrivedBySym[sym] : "0");
+    if (remaining < 0n) remaining = 0n;
+    const totalBridged = group.reduce((s, p) => s + BigInt(p.bridgedAmount), 0n);
+    const covered = remaining > 0n && remaining >= totalBridged - (totalBridged / 1000n + 1n);
+    group.forEach((p, i) => {
+      const bridged = BigInt(p.bridgedAmount);
+      const isLast = i === group.length - 1;
+      let attributed = isLast && covered ? remaining : (remaining < bridged ? remaining : bridged);
+      if (attributed < 0n) attributed = 0n;
+      remaining -= attributed; if (remaining < 0n) remaining = 0n;
+      p.arrivedAmt = attributed.toString();
+      p.arrivedFlag = attributed > 0n && attributed >= bridged - (bridged / 1000n + 1n);
+    });
+  }
+}
+/* split flow の現在フェーズ (パートの最小未完ステップから導出。永続化しない) */
+function crossSplitPhase(f) {
+  if (!f || !Array.isArray(f.parts) || !f.parts.length) return "done";
+  if (f.parts.every((p) => p.step === 4 || p.step === "error")) return "done";
+  if (f.parts.some((p) => p.step === 0)) return 1;
+  if (f.parts.some((p) => p.step === 1)) return 2;
+  if (f.parts.some((p) => p.step === 2)) return 3;
+  return 4;
+}
+
 /* ---------- v4 arbitrage: price-gap routes between QL1 and Infinite ----------
    Numeraire is QOM (exists on both chains, bridges 1:1 at fee 0).
    Every number comes from running the real route quotes (fetchBestRoute =
@@ -973,7 +1139,9 @@ function restoreXFlow(json) {
   if (!json) return null;
   try {
     const f = JSON.parse(json);
-    if (!f || f.v !== 1 || !f.srcKey || !f.dstKey || !f.sym) return null;
+    if (!f || !f.srcKey || !f.dstKey) return null;
+    if (f.v === 2 && f.kind === "split" && Array.isArray(f.parts) && f.parts.length >= 2) return f;
+    if (f.v !== 1 || !f.sym) return null;
     return f;
   } catch (e) { return null; }
 }
@@ -1328,7 +1496,7 @@ function setXSrc(srcKey) {
   if ($("xSrcQl1")) $("xSrcQl1").classList.toggle("active", srcKey === "ql1");
   if ($("xDstLabel")) $("xDstLabel").textContent = CHAINS[xDstKey()].label;
   fillXSelects();
-  state.xCandidates = []; state.xQuote = null; state.xBenchmark = null;
+  state.xCandidates = []; state.xQuote = null; state.xBenchmark = null; state.xSplit = null;
   if ($("xCandidates")) $("xCandidates").innerHTML = "";
   setChain(srcKey);
   refreshXBalance();
@@ -1374,9 +1542,15 @@ async function onXQuote() {
     state.xCandidates = cands;
     state.xBenchmark = cands.benchmark || null;
     state.xQuote = { fromId: f.id, toId: tk.id, amountIn: amountIn.toString() };
+    state.xSplit = null;
+    try { state.xSplit = await evaluateCrossSplit(state.xSrc, xDstKey(), amountIn, cands); } catch (e) { state.xSplit = null; /* splits are optional */ }
     renderXCandidates();
     const best = cands.find((c) => c.enabled);
-    if (best) setXStatus(t("xQuoted", cands.filter((c) => c.enabled).length, best.pair.sym, formatAmount(best.finalOut, tk.decimals, 6), tk.symbol));
+    if (best) {
+      let msg = t("xQuoted", cands.filter((c) => c.enabled).length, best.pair.sym, formatAmount(best.finalOut, tk.decimals, 6), tk.symbol);
+      if (state.xSplit && state.xSplit.plan) msg += t("xSplitWinNote");
+      setXStatus(msg);
+    }
     else setXStatus(t("xNoCandidate"), true);
   } catch (e) { setXStatus(t("xQuoteFail") + e.message, true); }
   finally { btn.disabled = false; }
@@ -1414,7 +1588,34 @@ function renderXCandidates() {
   const toTok = state.xQuote ? tokenById(xDstKey(), state.xQuote.toId) : null;
   const fromTok = state.xQuote ? tokenById(state.xSrc, state.xQuote.fromId) : null;
   if (!toTok || !fromTok) { list.innerHTML = ""; return; }
-  list.innerHTML = state.xCandidates.map((c, i) => {
+  /* v6: split plan card (only when a split actually beats the best single
+     full route; when splits were evaluated but lost, a small honest note). */
+  let splitHtml = "";
+  const xs = state.xSplit;
+  if (xs && xs.plan) {
+    const plan = xs.plan;
+    const diff = xs.bestSingle && xs.bestSingle.finalOut > 0n ? (Number(plan.totalOut - xs.bestSingle.finalOut) / Number(xs.bestSingle.finalOut)) * 100 : 0;
+    const partsHtml = plan.parts.map((p) =>
+      '<span class="split-leg"><span class="split-leg-head"><span class="pct-chip">' + p.pct + '%</span>' +
+      '<span class="split-path">' + fullPathHtml(p.cand, fromTok, toTok) + '</span>' +
+      '<span class="split-leg-out">' + formatAmount(p.finalOut, toTok.decimals, 6) + " " + esc(toTok.symbol) + '</span></span>' +
+      '<span class="split-bar"><span class="split-bar-fill" style="width:' + p.pct + '%"></span></span></span>'
+    ).join("");
+    const feeLine = state.xSrc === "infinite"
+      ? '<span class="r-line">' + esc(t("xSplitFeeTotalInf", formatAmount(plan.parts.reduce((s, p) => s + (p.cand.nativeFee || 0n), 0n), 18, 4), plan.parts.length)) + "</span>"
+      : '<span class="r-line">' + esc(t("xSplitFeeQl1")) + "</span>";
+    splitHtml = '<div class="route-card split-card">' +
+      '<span class="r-head"><span class="r-rank">' + esc(t("planSplitTitle")) + '</span><span class="badge best">' + esc(t("badgeRecommended")) + '</span>' +
+      '<span class="r-out">' + formatAmount(plan.totalOut, toTok.decimals, 6) + " " + esc(toTok.symbol) + '</span></span>' +
+      '<span class="r-line">' + esc(t("splitVsSingle", diff.toFixed(2))) + "</span>" +
+      partsHtml + feeLine +
+      '<span class="r-line">' + esc(t("xSplitPartsNote", plan.parts.length)) + "</span>" +
+      '<button type="button" class="x-start x-split-start">' + esc(t("xSplitStartBtn")) + "</button></div>";
+  }
+  const splitLostNote = xs && !xs.plan && xs.best
+    ? '<p class="count">' + esc(t("splitLost", formatAmount(xs.best.totalOut, toTok.decimals, 6), toTok.symbol)) + "</p>"
+    : "";
+  list.innerHTML = splitHtml + state.xCandidates.map((c, i) => {
     if (!c.enabled) {
       return '<div class="route-card" style="opacity:.55"><span class="r-head"><span class="r-rank">' + esc(t("xVia")) + " " + esc(c.pair.sym) + '</span></span><span class="r-line">' + esc(c.reason || "") + "</span></div>";
     }
@@ -1443,8 +1644,9 @@ function renderXCandidates() {
       '<span class="r-line">' + esc(t("xFinalEst")) + ": " + formatAmount(c.finalOut, toTok.decimals, 6) + " " + esc(toTok.symbol) + " ／ " + esc(t("routeHops", hops)) + "</span>" +
       benchHtml +
       '<button type="button" class="x-start" data-idx="' + i + '">' + esc(t("xStartBtn")) + "</button></div>";
-  }).join("") + '<p class="count">' + esc(t("xEstNote")) + "</p>";
-  list.querySelectorAll(".x-start").forEach((el) => el.addEventListener("click", () => startXFlow(state.xCandidates[Number(el.dataset.idx)])));
+  }).join("") + splitLostNote + '<p class="count">' + esc(t("xEstNote")) + "</p>";
+  list.querySelectorAll(".x-start").forEach((el) => { if (el.classList && el.classList.contains("x-split-start")) return; el.addEventListener("click", () => startXFlow(state.xCandidates[Number(el.dataset.idx)])); });
+  list.querySelectorAll(".x-split-start").forEach((el) => el.addEventListener("click", () => startXSplitFlow()));
 }
 /* routeOrSym: a full-route entry from state.xCandidates (v5: the CHOSEN route's
    paths are stored and executed exactly), or a bridge-token symbol string
@@ -1476,6 +1678,275 @@ async function startXFlow(routeOrSym, opts) {
   renderXFlow();
   setXStatus("");
 }
+/* ---------- v6: guided SPLIT flow (grouped phases, per-part execution) ----------
+   part.step: 0 = 交換1待ち, 1 = ブリッジ待ち, 2 = 到着待ち, 3 = 交換2待ち,
+   4 = 完了, "error" = そのパートは理由を表示して停止 (他パートは続行)。
+   各パートは選ばれた全体ルートの保存パスをそのまま使う。パスが見積もり
+   できなくなっていたら、そのパートだけ止めて理由を表示する (v5 の原則)。 */
+async function startXSplitFlow() {
+  if (!state.account) { setXStatus(t("xNeedConnect"), true); return; }
+  const xs = state.xSplit;
+  if (!xs || !xs.plan || !state.xQuote) return;
+  const plan = xs.plan;
+  const parts = plan.parts.map((p, i) => ({
+    idx: i, pct: p.pct, sym: p.cand.pair.sym, tSrcId: p.cand.tSrc.id, tDstId: p.cand.tDst.id,
+    amountIn: p.amountIn.toString(),
+    leg1Path: p.cand.leg1Path ? p.cand.leg1Path.slice() : null,
+    leg2Path: p.cand.leg2Path ? p.cand.leg2Path.slice() : null,
+    estLeg1Out: p.leg1Out.toString(), estFinalOut: p.finalOut.toString(),
+    nativeFee: (p.cand.nativeFee || 0n).toString(),
+    step: p.cand.leg1Path ? 0 : 1,
+    received: p.cand.leg1Path ? null : p.amountIn.toString(),
+    baselineT: null, swap1Tx: null, bridgeTx: null, bridgeAt: null, messageId: null,
+    bridgedAmount: null, arrivedAmt: null, arrivedFlag: false, swap2Tx: null,
+    error: null, errorPhase: null,
+  }));
+  state.xflow = {
+    v: 2, kind: "split",
+    srcKey: state.xSrc, dstKey: xDstKey(), fromId: state.xQuote.fromId, toId: state.xQuote.toId,
+    amountText: $("xAmount").value, amountIn: state.xQuote.amountIn,
+    totalEst: plan.totalOut.toString(), baselineDstBySym: {}, parts,
+    createdAt: Date.now(),
+  };
+  saveXFlow();
+  renderXFlow();
+  setXStatus("");
+}
+function xSplitPartTokens(f, p) {
+  return {
+    tSrc: tokenById(f.srcKey, p.tSrcId), tDst: tokenById(f.dstKey, p.tDstId),
+    pair: bridgePairBySym(p.sym),
+  };
+}
+function renderXSplitFlow() {
+  const area = $("xFlow"); if (!area) return;
+  const f = state.xflow;
+  const fromTok = tokenById(f.srcKey, f.fromId), toTok = tokenById(f.dstKey, f.toId);
+  const src = CHAINS[f.srcKey], dst = CHAINS[f.dstKey];
+  if (!fromTok || !toTok) { area.innerHTML = ""; return; }
+  const phase = crossSplitPhase(f);
+  const n = f.parts.length;
+  const badge = (p, ph) => {
+    if (p.step === "error") return p.errorPhase === ph ? t("xsStepFailBadge") : t("xStepWait");
+    const doneAt = [1, 2, 3, 4][ph - 1];
+    if (typeof p.step === "number" && p.step >= doneAt) return t("xStepDone");
+    if ((ph === 1 && p.step === 0) || (ph === 2 && p.step === 1) || (ph === 3 && p.step === 2) || (ph === 4 && p.step === 3)) return t("xStepNow");
+    return t("xStepWait");
+  };
+  const head = (p) => '<div class="xstep-head"><b>' + esc(t("xsPartHead", p.idx, n, p.pct, p.sym)) + "</b></div>";
+  let html = '<div class="xflow">';
+  if (phase !== "done") html += '<p class="count">' + esc(t("xsResumeNote")) + " " + esc(src.label) + " → " + esc(dst.label) + " / " + esc(fromTok.symbol) + " → " + esc(toTok.symbol) + " / " + esc(t("xFinalEst")) + ": " + formatAmount(BigInt(f.totalEst), toTok.decimals, 6) + " " + esc(toTok.symbol) + "</p>";
+  html += '<p class="count">' + esc(t("xSplitPartsNote", n)) + "</p>";
+  // ---- phase 1: swap 1 per part ----
+  html += '<div class="xstep' + (phase === 1 ? " current" : "") + '"><div class="xstep-head"><b>' + esc(t("xsStep1Title")) + "</b></div>";
+  for (const p of f.parts) {
+    const { tSrc } = xSplitPartTokens(f, p);
+    if (!tSrc) continue;
+    html += '<div class="xpart">' + head(p) +
+      '<p class="count">' + esc(p.leg1Path
+        ? t("xStep1Desc", formatAmount(BigInt(p.amountIn), fromTok.decimals, 6) + " " + fromTok.symbol, tSrc.symbol, pathLabel(f.srcKey, p.leg1Path))
+        : t("xStep1Skip")) + "</p>" +
+      '<p class="count">' + esc(badge(p, 1)) + "</p>" +
+      (p.received != null ? '<p class="count">' + esc(t("xsReceived", formatAmount(BigInt(p.received), tSrc.decimals, 6), tSrc.symbol)) + "</p>" : "") +
+      (p.step === 0 ? '<button type="button" data-split-act="s1" data-idx="' + p.idx + '">' + esc(t("xStep1Btn")) + "</button>" : "") +
+      (p.swap1Tx ? '<p class="count">' + esc(shortHash(p.swap1Tx)) + "</p>" : "") +
+      (p.step === "error" && p.errorPhase === 1 ? '<p class="count" style="color:#ff9d9d">' + esc(p.error || "") + "</p>" : "") + "</div>";
+  }
+  html += "</div>";
+  // ---- phase 2: bridge per part ----
+  html += '<div class="xstep' + (phase === 2 ? " current" : "") + '"><div class="xstep-head"><b>' + esc(t("xsStep2Title")) + "</b></div>";
+  for (const p of f.parts) {
+    const { tSrc } = xSplitPartTokens(f, p);
+    if (!tSrc) continue;
+    const amt = p.received != null ? formatAmount(BigInt(p.received), tSrc.decimals, 6) + " " + tSrc.symbol : "—";
+    html += '<div class="xpart">' + head(p) +
+      '<p class="count">' + esc(f.srcKey === "infinite" ? t("xStep2DescInf", amt, tSrc.symbol) : t("xStep2DescQl1", amt, tSrc.symbol)) + "</p>" +
+      '<p class="count">' + esc(badge(p, 2)) + "</p>" +
+      (p.step === 1 ? '<button type="button" data-split-act="s2" data-idx="' + p.idx + '">' + esc(t("xStep2Btn")) + "</button>" : "") +
+      (p.bridgeTx ? '<p class="count">' + esc(t("xBridgeTxLabel")) + esc(shortHash(p.bridgeTx)) + "</p>" : "") +
+      (p.step === "error" && p.errorPhase === 2 ? '<p class="count" style="color:#ff9d9d">' + esc(p.error || "") + "</p>" : "") + "</div>";
+  }
+  html += "</div>";
+  // ---- phase 3: arrival watch (per intermediate token) ----
+  html += '<div class="xstep' + (phase === 3 ? " current" : "") + '"><div class="xstep-head"><b>' + esc(t("xStep3Title")) + "</b></div>";
+  for (const p of f.parts) {
+    const { tSrc } = xSplitPartTokens(f, p);
+    if (!tSrc) continue;
+    let line;
+    if (p.arrivedAmt != null && BigInt(p.arrivedAmt) > 0n) line = t("xStepArrived", formatAmount(BigInt(p.arrivedAmt), tSrc.decimals, 6), tSrc.symbol);
+    else if (p.bridgedAmount != null) line = t("xStep3Desc", tSrc.symbol, dst.label);
+    else line = t("xStepWait");
+    html += '<div class="xpart">' + head(p) + '<p class="count">' + esc(badge(p, 3)) + "</p>" +
+      '<p class="count">' + esc(line) + "</p></div>";
+  }
+  if (f.parts.some((p) => p.step === 2)) {
+    html += '<p class="count" id="xElapsed"></p><button type="button" id="xSplitCheckBtn">' + esc(t("xStep3CheckBtn")) + "</button>";
+  }
+  html += "</div>";
+  // ---- phase 4: swap 2 per part ----
+  html += '<div class="xstep' + (phase === 4 ? " current" : "") + '"><div class="xstep-head"><b>' + esc(t("xsStep4Title")) + "</b></div>";
+  for (const p of f.parts) {
+    const { tSrc } = xSplitPartTokens(f, p);
+    if (!tSrc) continue;
+    const desc = p.leg2Path
+      ? t("xStep4DescV5", tSrc.symbol, toTok.symbol, pathLabel(f.dstKey, p.leg2Path))
+      : t("xStep4Identity");
+    html += '<div class="xpart">' + head(p) +
+      '<p class="count">' + esc(desc) + "</p>" +
+      '<p class="count">' + esc(badge(p, 4)) + "</p>" +
+      (!p.leg2Path && p.step === 4 ? '<p class="count">' + esc(t("xsAutoDone")) + "</p>" : "") +
+      (p.step === 3 && p.leg2Path ? '<button type="button" data-split-act="s4" data-idx="' + p.idx + '">' + esc(t("xStep4BtnExec")) + "</button>" : "") +
+      (p.swap2Tx ? '<p class="count">' + esc(shortHash(p.swap2Tx)) + "</p>" : "") +
+      (p.step === "error" && p.errorPhase === 4 ? '<p class="count" style="color:#ff9d9d">' + esc(p.error || "") + "</p>" : "") + "</div>";
+  }
+  html += "</div>";
+  if (phase === "done") {
+    const okCount = f.parts.filter((p) => p.step === 4).length;
+    html += '<p class="count">' + esc(t("xsDone")) + "</p>";
+    if (okCount < n) html += '<p class="count">' + esc(t("xsDonePartial", okCount, n)) + "</p>";
+  }
+  html += "</div>";
+  area.innerHTML = html;
+  area.querySelectorAll("[data-split-act]").forEach((el) => {
+    const idx = Number(el.dataset.idx);
+    el.addEventListener("click", () => {
+      if (el.dataset.splitAct === "s1") doXSplitStep1(idx);
+      else if (el.dataset.splitAct === "s2") doXSplitStep2(idx);
+      else if (el.dataset.splitAct === "s4") doXSplitStep4(idx);
+    });
+  });
+  const bc = $("xSplitCheckBtn"); if (bc) bc.addEventListener("click", () => checkSplitArrival(true));
+  if (f.parts.some((p) => p.step === 2)) {
+    const earliest = Math.min(...f.parts.filter((p) => p.step === 2 && p.bridgeAt).map((p) => p.bridgeAt));
+    const upd = () => { const el = $("xElapsed"); if (el && isFinite(earliest)) el.textContent = t("xStep3Elapsed", Math.max(0, Math.floor((Date.now() - earliest) / 1000))); };
+    upd();
+    state.xPollTimer = setInterval(() => { upd(); checkSplitArrival(false); }, 15000);
+    checkSplitArrival(false);
+  }
+}
+async function doXSplitStep1(idx) {
+  const f = state.xflow; if (!f || f.kind !== "split") return;
+  const p = f.parts[idx]; if (!p || p.step !== 0) return;
+  const src = CHAINS[f.srcKey];
+  const fromTok = tokenById(f.srcKey, f.fromId);
+  const { tSrc } = xSplitPartTokens(f, p);
+  if (!fromTok || !tSrc) return;
+  try {
+    if (!state.account) throw new Error(t("xNeedConnect"));
+    await ensureChain(src);
+    const amountIn = BigInt(p.amountIn);
+    p.baselineT = (await readTokenBalance(src, tSrc.address, state.account)).toString();
+    const fresh = await requotePathExact(src, amountIn, p.leg1Path);
+    if (fresh == null) {
+      p.step = "error"; p.error = t("routeGone"); p.errorPhase = 1;
+      saveXFlow(); renderXFlow(); return;
+    }
+    const route = { path: p.leg1Path, amountOut: fresh, amountIn, hops: p.leg1Path.length - 1 };
+    if (!fromTok.isNative) await ensureAllowance(src.router, fromTok, amountIn, src);
+    const tx = buildSwapTx(src, fromTok, tSrc, route, state.account, state.slippagePct);
+    setXStatus(t("xWorking"));
+    const hash = await sendTx(tx, "0x" + tx.value.toString(16));
+    p.swap1Tx = hash; saveXFlow();
+    const rc = await waitReceipt(hash);
+    if (rc && rc.status === "0x0") throw new Error(t("statusSwapFailedTx"));
+    let received = fresh;
+    try {
+      const after = await readTokenBalance(src, tSrc.address, state.account);
+      const delta = after - BigInt(p.baselineT || "0");
+      if (delta > 0n) received = delta;
+    } catch (e) { /* keep the fresh quote */ }
+    p.received = received.toString(); p.step = 1; saveXFlow(); renderXFlow();
+  } catch (e) { setXStatus(t("xStepFail") + friendlyErr(e), true); }
+}
+async function doXSplitStep2(idx) {
+  const f = state.xflow; if (!f || f.kind !== "split") return;
+  const p = f.parts[idx]; if (!p || p.step !== 1) return;
+  const src = CHAINS[f.srcKey], dst = CHAINS[f.dstKey];
+  const { tSrc, tDst, pair } = xSplitPartTokens(f, p);
+  if (!tSrc || !tDst || !pair) return;
+  try {
+    if (!state.account) throw new Error(t("xNeedConnect"));
+    await ensureChain(src);
+    const amount = BigInt(p.received);
+    if (!f.baselineDstBySym) f.baselineDstBySym = {};
+    if (f.baselineDstBySym[p.sym] == null) {
+      f.baselineDstBySym[p.sym] = (await readTokenBalance(dst, tDst.address, state.account)).toString();
+    }
+    let value = 0n;
+    if (f.srcKey === "infinite") {
+      const q = await fetchBridgeNativeQuote(pair);
+      if (!q) throw new Error(t("errUnknown"));
+      value = q.totalNative; p.nativeFee = value.toString();
+      await ensureAllowance(pair.br, tSrc, amount, src);
+    } else {
+      await ensureAllowance(pair.ql1Router, tSrc, amount, src);
+    }
+    const tx = buildBridgeTx(pair, f.srcKey, state.account, amount, value);
+    setXStatus(t("xWorking"));
+    const hash = await sendTx(tx, "0x" + tx.value.toString(16));
+    p.bridgeTx = hash; p.bridgeAt = Date.now();
+    try {
+      const rc = await waitReceipt(hash);
+      const mid = extractMessageId(rc); if (mid) p.messageId = mid;
+      if (rc && rc.status === "0x0") throw new Error(t("statusSwapFailedTx"));
+    } catch (e) { if (e && e.message === t("statusSwapFailedTx")) throw e; }
+    p.bridgedAmount = amount.toString(); p.step = 2; saveXFlow(); renderXFlow();
+  } catch (e) { setXStatus(t("xStepFail") + friendlyErr(e), true); }
+}
+async function checkSplitArrival(manual) {
+  const f = state.xflow; if (!f || f.kind !== "split") return false;
+  if (!f.parts.some((p) => p.step === 2)) return false;
+  const dst = CHAINS[f.dstKey];
+  try {
+    const syms = [...new Set(f.parts.filter((p) => p.step === 2).map((p) => p.sym))];
+    const arrivedBySym = {};
+    for (const sym of syms) {
+      const anyPart = f.parts.find((p) => p.sym === sym);
+      const tDst = tokenById(f.dstKey, anyPart.tDstId);
+      const bal = await readTokenBalance(dst, tDst.address, state.account);
+      const base = BigInt((f.baselineDstBySym || {})[sym] || "0");
+      arrivedBySym[sym] = bal > base ? bal - base : 0n;
+    }
+    const before = f.parts.map((p) => String(p.step) + ":" + (p.arrivedAmt || "")).join("|");
+    attributeSplitArrivals(f.parts, arrivedBySym);
+    for (const p of f.parts) {
+      if (p.step === 2 && p.arrivedFlag) p.step = p.leg2Path ? 3 : 4;
+    }
+    const after = f.parts.map((p) => String(p.step) + ":" + (p.arrivedAmt || "")).join("|");
+    if (before !== after) { saveXFlow(); renderXFlow(); return true; }
+    if (manual) setXStatus(t("xStep3NotYet"));
+  } catch (e) { if (manual) setXStatus(t("xStepFail") + e.message, true); }
+  return false;
+}
+async function doXSplitStep4(idx) {
+  const f = state.xflow; if (!f || f.kind !== "split") return;
+  const p = f.parts[idx]; if (!p || p.step !== 3 || !p.leg2Path) return;
+  const dst = CHAINS[f.dstKey];
+  const toTok = tokenById(f.dstKey, f.toId);
+  const { tDst } = xSplitPartTokens(f, p);
+  if (!toTok || !tDst) return;
+  try {
+    if (!state.account) throw new Error(t("xNeedConnect"));
+    await ensureChain(dst);
+    const amount = BigInt(p.arrivedAmt || p.bridgedAmount);
+    const fresh = await requotePathExact(dst, amount, p.leg2Path);
+    if (fresh == null) {
+      p.step = "error"; p.error = t("routeGone"); p.errorPhase = 4;
+      saveXFlow(); renderXFlow(); return;
+    }
+    setXStatus(t("xStep4QuoteLine", formatAmount(fresh, toTok.decimals, 6), toTok.symbol, pathLabel(f.dstKey, p.leg2Path)));
+    const route = { path: p.leg2Path, amountOut: fresh, amountIn: amount, hops: p.leg2Path.length - 1 };
+    if (!tDst.isNative) await ensureAllowance(dst.router, tDst, amount, dst);
+    const tx = buildSwapTx(dst, tDst, toTok, route, state.account, state.slippagePct);
+    setXStatus(t("xWorking"));
+    const hash = await sendTx(tx, "0x" + tx.value.toString(16));
+    p.swap2Tx = hash; saveXFlow();
+    const rc = await waitReceipt(hash);
+    if (rc && rc.status === "0x0") throw new Error(t("statusSwapFailedTx"));
+    p.step = 4; saveXFlow(); renderXFlow();
+    if (crossSplitPhase(f) === "done") setXStatus(t("xsDone"));
+  } catch (e) { setXStatus(t("xStepFail") + friendlyErr(e), true); }
+}
 function xFlowTokens() {
   const f = state.xflow; if (!f) return {};
   return {
@@ -1491,6 +1962,7 @@ function renderXFlow() {
   stopXPoll();
   if ($("xAbandon")) $("xAbandon").style.display = f ? "" : "none";
   if (!f) { area.innerHTML = ""; return; }
+  if (f.kind === "split") { renderXSplitFlow(); return; }
   const { fromTok, toTok, tSrc, pair, src, dst } = xFlowTokens();
   if (!fromTok || !toTok || !tSrc || !pair) { area.innerHTML = ""; return; }
   const st = (n) => f.step > n || f.step === "done" ? t("xStepDone") : f.step === n ? t("xStepNow") : t("xStepWait");
@@ -1895,7 +2367,7 @@ function initApp() {
   if ($("arbScanBtn")) $("arbScanBtn").addEventListener("click", onArbScan);
   document.querySelectorAll(".arb-chip").forEach((el) => el.addEventListener("click", () => { if ($("arbAmount")) $("arbAmount").value = el.dataset.amt; }));
   if ($("xAbandon")) $("xAbandon").addEventListener("click", onXAbandon);
-  for (const id of ["xFromToken", "xToToken"]) if ($(id)) $(id).addEventListener("change", () => { state.xCandidates = []; state.xQuote = null; if ($("xCandidates")) $("xCandidates").innerHTML = ""; refreshXBalance(); });
+  for (const id of ["xFromToken", "xToToken"]) if ($(id)) $(id).addEventListener("change", () => { state.xCandidates = []; state.xQuote = null; state.xSplit = null; if ($("xCandidates")) $("xCandidates").innerHTML = ""; refreshXBalance(); });
   loadXFlow();
   setChain("infinite");
   renderBalances();
@@ -1906,5 +2378,6 @@ if (typeof document !== "undefined" && document.getElementById && document.getEl
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { CHAINS, STR, LANG, state, parseAmount, formatAmount, formatRate, formatGas, encAddr, encUint, encLegsTail, encodeGetAmountsOut, decodeAmountsOut, buildCandidatePaths, fetchQuotesForTokens, evaluateSplits, buildSwapTx, buildApproveTx, buildSplitTx, applySlippageBps, fetchTokenMeta, tokenById, allTokens, symbolFor, onQuote, onCaAdd, selectRoute, selectSplit, selectedRoute, setChain, estimateGasUnitsSingle, estimateGasUnitsSplit, splitExecutable,
     BRIDGE_PAIRS, BRIDGE_MAILBOX, bridgePairBySym, fetchBestRoute, fetchRoutesOnly, attachImpactsMulti, buildBridgeTx, decodeBridgeTxData, encodeRecipient32, fetchBridgeNativeQuote, fetchBridgeDelivered, readTokenBalance, extractMessageId, quoteCrossPlan, requotePathExact, serializeXFlow, restoreXFlow, saveXFlow, loadXFlow, setMode, setXSrc, xDstKey, onXQuote, renderXCandidates, startXFlow, renderXFlow, checkArrival, doXStep1, doXStep4, doXStep4Legacy, onXAbandon,
+    evaluateCrossSplit, crossSplitPool, attributeSplitArrivals, crossSplitPhase, startXSplitFlow, renderXSplitFlow, checkSplitArrival, doXSplitStep1, doXSplitStep2, doXSplitStep4,
     qomTokenId, fetchBridgeFeeInQom, quoteArbRoute, quoteArbBoard, renderArbBoard, onArbScan, startArbFlow, startReturnFlow };
 }

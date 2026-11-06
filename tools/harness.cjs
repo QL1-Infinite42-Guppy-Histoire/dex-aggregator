@@ -229,5 +229,53 @@ function loadPage(lang, seedStore) {
   console.log("[V5-EN] full-path html has 'bridge' + route start label:", enHtml.includes("bridge") && enHtml.includes("Start with this route"));
   console.log("[V5-EN] full routes count:", en5.app.state.xCandidates.filter((c) => c.enabled).length);
 
+  // ---- v6: cross-chain split plans ----
+  const jp6 = loadPage("ja", {});
+  jp6.app.state.account = "0x1111111111111111111111111111111111111111";
+  jp6.app.setMode("cross"); jp6.app.setXSrc("infinite");
+  jp6.els.xFromToken.value = "usdt"; jp6.els.xToToken.value = "native"; jp6.els.xAmount.value = "100";
+  await jp6.app.onXQuote();
+  const xs6 = jp6.app.state.xSplit;
+  console.log("\n[V6-JP] split evaluated:", xs6 && xs6.evaluated, "| best single:", xs6 && jp6.app.formatAmount(xs6.bestSingle.finalOut, 18, 2), "| best split:", xs6 && xs6.best && jp6.app.formatAmount(xs6.best.totalOut, 18, 2), "| plan:", !!(xs6 && xs6.plan));
+  console.log("[V6-JP] plan beats single:", !!(xs6 && xs6.plan && xs6.plan.totalOut > xs6.bestSingle.finalOut), "| split card html:", jp6.els.xCandidates.innerHTML.includes("分割プラン") && jp6.els.xCandidates.innerHTML.includes("この分割プランではじめる"), "| fee total line:", jp6.els.xCandidates.innerHTML.includes("メッセージ代の合計"), "| parts-separate note:", jp6.els.xCandidates.innerHTML.includes("パートごとに分かれて"));
+  if (xs6 && xs6.plan) {
+    console.log("[V6-JP] plan parts:", xs6.plan.parts.map((p) => p.pct + "%:" + p.cand.pair.sym).join(" + "), "| vs single:", ((Number(xs6.plan.totalOut) / Number(xs6.bestSingle.finalOut) - 1) * 100).toFixed(2) + "%");
+    await jp6.app.startXSplitFlow();
+    const sf = jp6.app.state.xflow;
+    console.log("[V6-JP] split flow: kind", sf && sf.kind, "| v", sf && sf.v, "| parts:", sf && sf.parts.length, "| pct sum:", sf && sf.parts.reduce((s, p) => s + p.pct, 0), "| amounts sum == amountIn:", !!sf && sf.parts.reduce((s, p) => s + BigInt(p.amountIn), 0n).toString() === sf.amountIn, "| persisted:", (jp6.store["dexagg_xflow_v1"] || "").includes('"kind":"split"'));
+    console.log("[V6-JP] flow html: phase titles:", jp6.els.xFlow.innerHTML.includes("パートごと"), "| s1 buttons:", (jp6.els.xFlow.innerHTML.match(/data-split-act="s1"/g) || []).length, "| abandon visible:", JSON.stringify(jp6.els.xAbandon.style.display));
+    const jp6b = loadPage("ja", jp6.store);
+    const rsf = jp6b.app.loadXFlow();
+    console.log("[V6-JP reload] split flow restored:", rsf && rsf.kind, "| parts:", rsf && rsf.parts.length, "| leg paths kept:", !!rsf && JSON.stringify(rsf.parts.map((p) => p.leg1Path)) === JSON.stringify(sf.parts.map((p) => p.leg1Path)), "| phase:", jp6b.app.crossSplitPhase(rsf));
+    const mk = (steps) => ({ kind: "split", parts: steps.map((s) => ({ step: s })) });
+    console.log("[V6-JP] phase derivation:", [mk([0, 0]), mk([1, 0]), mk([1, 1]), mk([2, 2]), mk([3, 4])].map((x) => jp6.app.crossSplitPhase(x)).join(","), "| done cases:", String(jp6.app.crossSplitPhase(mk([4, 4]))), String(jp6.app.crossSplitPhase(mk([4, "error"]))));
+  }
+  // attribution unit tests (pure): shared intermediate, over-delivery and partial arrival
+  const E18 = (n) => (BigInt(n) * 10n ** 18n).toString();
+  const parts1 = [{ sym: "BABY", bridgedAmount: E18(100), arrivedAmt: null, arrivedFlag: false }, { sym: "BABY", bridgedAmount: E18(50), arrivedAmt: null, arrivedFlag: false }, { sym: "QOM", bridgedAmount: E18(7), arrivedAmt: null, arrivedFlag: false }];
+  jp6.app.attributeSplitArrivals(parts1, { BABY: 160n * 10n ** 18n, QOM: 7n * 10n ** 18n });
+  console.log("[V6] attribution over-delivery: p1 exact:", parts1[0].arrivedAmt === E18(100) && parts1[0].arrivedFlag, "| last part takes remainder incl. dust:", parts1[1].arrivedAmt === E18(60) && parts1[1].arrivedFlag, "| other sym independent:", parts1[2].arrivedAmt === E18(7) && parts1[2].arrivedFlag);
+  const parts2 = [{ sym: "BABY", bridgedAmount: E18(100), arrivedAmt: null, arrivedFlag: false }, { sym: "BABY", bridgedAmount: E18(50), arrivedAmt: null, arrivedFlag: false }];
+  jp6.app.attributeSplitArrivals(parts2, { BABY: 120n * 10n ** 18n });
+  console.log("[V6] attribution partial: p1 full+flagged:", parts2[0].arrivedAmt === E18(100) && parts2[0].arrivedFlag, "| p2 partial, not flagged:", parts2[1].arrivedAmt === E18(20) && !parts2[1].arrivedFlag);
+  // case B honesty: 10B QOM (Infinite) -> QOM (QL1): the single BABY route must win, no split plan
+  const jp6c = loadPage("ja", {});
+  jp6c.app.setMode("cross"); jp6c.app.setXSrc("infinite");
+  jp6c.els.xFromToken.value = "qom"; jp6c.els.xToToken.value = "native"; jp6c.els.xAmount.value = "10000000000";
+  await jp6c.app.onXQuote();
+  const xsB = jp6c.app.state.xSplit;
+  console.log("[V6-JP caseB] 10B QOM: best single via:", jp6c.app.state.xCandidates.find((c) => c.enabled).pair.sym, "| best split vs single:", xsB && xsB.best ? ((Number(xsB.best.totalOut) / Number(xsB.bestSingle.finalOut) - 1) * 100).toFixed(2) + "%" : null, "| plan is null (single wins):", !!xsB && xsB.plan === null, "| split-lost note shown:", jp6c.els.xCandidates.innerHTML.includes("単一ルートがいちばん"));
+
+  const en6 = loadPage("en", {});
+  en6.app.state.account = "0x1111111111111111111111111111111111111111";
+  en6.app.setMode("cross"); en6.app.setXSrc("infinite");
+  en6.els.xFromToken.value = "usdt"; en6.els.xToToken.value = "native"; en6.els.xAmount.value = "100";
+  await en6.app.onXQuote();
+  console.log("\n[V6-EN] split plan:", !!(en6.app.state.xSplit && en6.app.state.xSplit.plan), "| card html:", en6.els.xCandidates.innerHTML.includes("Split plan") && en6.els.xCandidates.innerHTML.includes("Start with this split plan"), "| fee line:", en6.els.xCandidates.innerHTML.includes("Total bridge messaging cost"));
+  if (en6.app.state.xSplit && en6.app.state.xSplit.plan) {
+    await en6.app.startXSplitFlow();
+    console.log("[V6-EN] split flow parts:", en6.app.state.xflow.parts.length, "| html has per-part heads:", en6.els.xFlow.innerHTML.includes("Part 1 of"), "| persisted:", (en6.store["dexagg_xflow_v1"] || "").includes('"kind":"split"'));
+  }
+
   console.log("\nHARNESS DONE");
 })().catch((e) => { console.error("HARNESS FAILED:", e); process.exit(1); });
