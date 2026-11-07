@@ -306,7 +306,7 @@ const CHAINS = {
       { id: "fish", symbol: "FISH", name: "FISH", address: "0x2c32120a12b754272d9e85c57f64b50ca2c43513", decimals: 18, isNative: false },
       { id: "panic", symbol: "PANIC", name: "Dont Panic (DONT)", address: "0xfaa842c8871f7f99c183f77871f79ce07dd056cd", decimals: 18, isNative: false },
       { id: "zap", symbol: "ZAP", name: "ZAP", address: "0x89195ca5c954b6f99b78f4a2aa5435a75dc5b256", decimals: 18, isNative: false },
-      { id: "cat42", symbol: "CAT42", name: "CAT42", address: "0x7386719ebbbed4d810ff89027bfb8a1cdf696310", decimals: 18, isNative: false },
+      { id: "cat42", symbol: "CAT42", name: "CAT42", address: "0x7386719ebbbeb4d810ff89027bfb8a1cdf696310", decimals: 18, isNative: false },
       { id: "father", symbol: "FATHER", name: "FATHER", address: "0x8981f00e92f31a87af12f980383d2217706258e7", decimals: 18, isNative: false },
       { id: "ket", symbol: "KET", name: "KET", address: "0xb749d42e6004db590b2f04f32b87485402a061e2", decimals: 18, isNative: false },
       { id: "baby", symbol: "BABY", name: "BABY", address: "0x77479226c103cc3c142faff6691bc7f849ce9c92", decimals: 18, isNative: false },
