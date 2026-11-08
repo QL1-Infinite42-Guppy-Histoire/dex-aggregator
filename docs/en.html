@@ -5,15 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DEX Aggregator (42 Chain / QL1 / 42 Testnet)</title>
 <meta name="description" content="Compare direct, multi-hop and split routes across all pools on 42 Chain (Infinite), QL1 and the 42 testnet, and swap along the plan that gives you the most.">
-<link rel="stylesheet" href="style.css">
+<script>(function(){try{var t=localStorage.getItem('guppy-theme');document.documentElement.dataset.theme=(t==='dark'?'dark':'light');}catch(e){document.documentElement.dataset.theme='light';}})();</script>
+<link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
 <header>
-  <div class="lang-switch"><label>Language / 言語 <select id="langSel"><option value="en" selected>English</option><option value="ja">日本語</option></select></label></div>
+  <div class="top-actions"><div class="lang-switch"><label>Language / 言語 <select id="langSel"><option value="en" selected>English</option><option value="ja">日本語</option></select></label></div><button id="themeToggle" type="button" class="theme-toggle" aria-label="Toggle background theme">🌙 Dark</button></div>
   <h1>DEX Aggregator (42 Chain / QL1 / Testnet)</h1>
   <p class="sub">Finds the route that gives you the most, across every pool.</p>
   <p class="sub small">A "route" is the path a swap takes. For example, USDT → 42 can go directly, or via another token like USDT → FISH → 42, and which one gives more depends on the amount. This site quotes every path — including "splits" that divide your amount across several routes — and ranks them, the same idea as 1inch.</p>
 </header>
+<main class="layout">
 
 <div id="testnetBanner" class="testnet-banner" style="display:none">⚠ Testnet (TEST42) — this is not real money</div>
 
@@ -172,9 +174,20 @@
   </ul>
 </section>
 
+</main>
 <footer>
   <p>v7 / Data: 42 Chain RPC / QL1 RPC / 42 Testnet RPC (read directly from the pools). Source code is published under the MIT license.</p>
 </footer>
+
+<script>
+(function(){
+  var btn=document.getElementById('themeToggle'); if(!btn) return;
+  var isJa=(document.documentElement.lang||'').indexOf('ja')===0;
+  function label(){ var d=document.documentElement.dataset.theme==='dark'; btn.textContent=d?(isJa?'\u2600\uFE0F \u767D\u80CC\u666F':'\u2600\uFE0F Light'):(isJa?'\uD83C\uDF19 \u9ED2\u80CC\u666F':'\uD83C\uDF19 Dark'); }
+  label();
+  btn.addEventListener('click',function(){ var next=document.documentElement.dataset.theme==='dark'?'light':'dark'; document.documentElement.dataset.theme=next; try{localStorage.setItem('guppy-theme',next);}catch(e){} label(); });
+})();
+</script>
 <script src="app.js?v=8"></script>
 </body>
 </html>
