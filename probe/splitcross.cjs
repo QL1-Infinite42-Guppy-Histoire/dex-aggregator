@@ -174,6 +174,6 @@ const refDiff = (raw, refFloat) => ((F18(raw) / refFloat - 1) * 100).toFixed(2) 
   await netCase("B 10B QOM->QOM", xsB, toA, "QOM");
   await netCase("C 1000 USDT->QOM", xsC, toA, "QOM");
   await netCase("D 1000 USDT->qCAW", xsD, toD, "qCAW");
-  console.log("期待: A shown=true / B shown=false (手数料負け) / C shown=true / D shown=true");
+  console.log("期待 (v7.1): A 単一が最適 (plan なし or shown=false) / B shown=false or plan なし / C shown=true / D shown=true");
 
 })().catch((e) => { console.error("PROBE FAILED:", e); process.exit(1); });

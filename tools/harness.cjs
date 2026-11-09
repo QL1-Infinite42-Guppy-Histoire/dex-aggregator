@@ -376,8 +376,8 @@ function loadPage(lang, seedStore) {
     const jaHtml = fs2.readFileSync(__dirname + "/../docs/ja.html", "utf8");
     const enHtml = fs2.readFileSync(__dirname + "/../docs/en.html", "utf8");
     console.log("\n[V6.3] gate page: reads dexagg_lang and redirects (ja only when saved, else en):", gate.includes("dexagg_lang") && gate.includes('"ja.html"') && gate.includes('"en.html"') && gate.includes('lang === "ja"'), "| fallback/noscript links to both pages:", gate.includes('href="en.html"') && gate.includes('href="ja.html"'));
-    console.log("[V6.3] ja.html is the JP app page (lang=ja, has langSel, loads app.js):", jaHtml.includes('lang="ja"') && jaHtml.includes('id="langSel"') && jaHtml.includes('src="app.js"'));
-    console.log("[V6.3] en.html is the EN app page (lang=en, has langSel, loads app.js):", enHtml.includes('lang="en"') && enHtml.includes('id="langSel"') && enHtml.includes('src="app.js"'));
+    console.log("[V6.3] ja.html is the JP app page (lang=ja, has langSel, loads app.js):", jaHtml.includes('lang="ja"') && jaHtml.includes('id="langSel"') && jaHtml.includes('src="app.js'));
+    console.log("[V6.3] en.html is the EN app page (lang=en, has langSel, loads app.js):", enHtml.includes('lang="en"') && enHtml.includes('id="langSel"') && enHtml.includes('src="app.js'));
     const lt = jp6.app.langTargetFor;
     console.log("[V6.3] langTargetFor: en from ja:", lt("en", "ja") === "en.html", "| ja from en:", lt("ja", "en") === "ja.html", "| same language is a no-op:", lt("ja", "ja") === null && lt("en", "en") === null);
     const jpl = loadPage("ja", {});

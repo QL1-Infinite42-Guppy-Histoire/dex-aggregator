@@ -1178,10 +1178,12 @@ async function quoteCrossPlan(srcKey, fromTok, dstKey, toTok, amountIn) {
    の R1/R2 が組み合わせられない): v6.1 の「交換2が実在する中継は1パート
    まで」という禁止を廃し、同一中継・同一 leg2Path のパート群は交換2を
    合算額で1回だけ見積もり、到着額に比例配分する合算モデルに置き換えた
-   (combineLeg2Groups / distributeCombinedOut)。v6.1 が潰したかった
-   「同じ宛先プールを2回独立見積もりする幻の勝ち」(10B QOM の BABY
-   バリアント同士 50:50 の +0.33%) は、合算により構造的に消える。
-   実行フェーズは従来どおりパート個別で、見積もりモデルだけの変更。
+   (combineLeg2Groups / distributeCombinedOut)。
+   v7.1 で合算モデルを廃止 (ユーザー指摘 2026-11-09: 分割を前提にした
+   数量計算になっていない): 各パートは「その量で交換1 → そのパート分の
+   ブリッジ手数料を差し引く → 交換2 をその到着額で」を独立に計算し、
+   総受け取りはパート合計とする (scoreAllocations 参照)。実行フェーズも
+   パート個別なので、見積もりと実行が同じ単位に揃った。
    パート金額は pct の床割りで統一し (見積もりはキャッシュ、RPC は
    レッグごとに一括)、勝った配分だけ最後に端数を最大パートへ寄せて
    同じモデルで再計算し、パート合計 = 入力額ちょうどにする。
@@ -1209,7 +1211,10 @@ const X_SPLIT_COMPS = { 2: [], 3: [], 4: [], 5: [] };
    交換2 を「ブリッジ到着額の合計」で1回だけ見積もり、出力を到着額に比例
    配分する (端数はグループ内最大パートへ)。これで上振れは構造的に消え、
    宛先が QOM 以外でも中継 QOM の R1/R2 のような組み合わせが使える。
-   交換1 は従来どおりパートごとの独立見積もり (同一チェーン分割と同じ)。 */
+   交換1 は従来どおりパートごとの独立見積もり (同一チェーン分割と同じ)。
+   (v7.1 以降、この合算関数は分割スコアリングでは未使用。純関数として
+   履歴保持し、ハーネスの単体確認だけが対象。現在の見積もりモデルは
+   scoreAllocations のパート独立計算を参照。) */
 function leg2GroupKey(cand) {
   return cand.leg2Path ? cand.pair.sym + "|" + cand.leg2Path.map((a) => String(a).toLowerCase()).join(",") : null;
 }
@@ -1239,6 +1244,27 @@ function distributeCombinedOut(totalOut, leg1Outs) {
   }
   return shares;
 }
+/* 1パート分のブリッジ手数料 (quoteNative の native 払い) を、そのパートの
+   中継トークン (tSrc) の量に換算して返す。ブリッジ自体はトークン 1:1 で、
+   手数料は別途 native で払うため、「手数料込みの正味」を見るには到着額から
+   この分を引く必要がある (v7.1: ユーザー指摘で分割計算をパート単位の
+   正味モデルに統一)。換算はこのサイト自身の最良ルート見積もりで行う。
+   手数料 0 (QL1 発など) は 0n。換算できなければ null (= そのパートは
+   正直に見積もれないので割り当てから外す)。 */
+async function bridgeFeeInSrcToken(srcKey, cand) {
+  const fee = cand.nativeFee || 0n;
+  if (fee <= 0n) return 0n;
+  const nativeTok = tokenById(srcKey, "native");
+  if (!nativeTok) return null;
+  if (cand.tSrc.address.toLowerCase() === nativeTok.address.toLowerCase()) return fee;
+  try {
+    const r = await fetchBestRoute(CHAINS[srcKey], nativeTok, cand.tSrc, fee);
+    return r && r.amountOut > 0n ? r.amountOut : null;
+  } catch (e) { return null; }
+}
+/* 1パートだけを独立に再見積もりする (分割スコアリングと同じモデル:
+   交換1 をパート金額で → そのパートのブリッジ手数料を引く → 交換2 を
+   到着額で)。 */
 async function requoteSplitPart(srcKey, dstKey, cand, amount) {
   let o1 = null;
   if (!cand.leg1Path) o1 = amount;
@@ -1248,19 +1274,23 @@ async function requoteSplitPart(srcKey, dstKey, cand, amount) {
     o1 = amts && amts.length ? amts[amts.length - 1] : null;
   }
   if (o1 == null || o1 <= 0n) return null;
-  if (o1 < (10n ** BigInt(cand.tSrc.decimals))) return null;
-  if (!cand.leg2Path) return { leg1Out: o1, finalOut: o1 };
-  const res2 = await rpcBatch(CHAINS[dstKey], [[CHAINS[dstKey].router, encodeGetAmountsOut(o1, cand.leg2Path)]]);
+  const fee = await bridgeFeeInSrcToken(srcKey, cand);
+  if (fee == null) return null;
+  const arrival = o1 - fee;
+  if (arrival < (10n ** BigInt(cand.tSrc.decimals))) return null;
+  if (!cand.leg2Path) return { leg1Out: o1, feeDeduct: fee, arrival, finalOut: arrival };
+  const res2 = await rpcBatch(CHAINS[dstKey], [[CHAINS[dstKey].router, encodeGetAmountsOut(arrival, cand.leg2Path)]]);
   const amts2 = decodeAmountsOut(res2[0]);
   const v = amts2 && amts2.length ? amts2[amts2.length - 1] : null;
-  return v != null && v > 0n ? { leg1Out: o1, finalOut: v } : null;
+  return v != null && v > 0n ? { leg1Out: o1, feeDeduct: fee, arrival, finalOut: v } : null;
 }
-/* ---------- v6.2/v6.4: cross-split quoter ----------
-   交換1 は (候補ルート, 金額) 単位でキャッシュする。交換2 は v6.4 から
-   「グループキー (中継+leg2Path) × 合算到着額」単位でキャッシュする
-   (combineLeg2Groups 参照 — 同一 leg2 を共有するパートは合算で1回だけ
-   見積もり、比例配分する)。探索の全ステージでキャッシュを共有し、
-   1回の rpcBatch が大きくなりすぎないよう 150 件ずつに区切る。 */
+/* ---------- v6.2/v6.4/v7.1: cross-split quoter ----------
+   交換1 は (候補ルート, 金額) 単位でキャッシュする。交換2 は v6.4 で
+   「グループキー (中継+leg2Path) × 合算到着額」単位だったが、v7.1 で
+   パート単位 (候補ルート × そのパートの到着額) に戻した — 分割の数量
+   計算はパートごとに独立であるべきというユーザー指摘 (2026-11-09)。
+   探索の全ステージでキャッシュを共有し、1回の rpcBatch が大きくなり
+   すぎないよう 150 件ずつに区切る。 */
 function makeCrossSplitQuoter(srcKey, dstKey, candIdx) {
   const leg1Cache = new Map(); // "candIdx|amount" -> leg1Out (BigInt) | null (null = その金額では交換1不可)
   const leg2Cache = new Map(); // "groupKey|totalIn" -> combined leg2 totalOut (BigInt) | null
@@ -1326,13 +1356,23 @@ async function evaluateCrossSplit(srcKey, dstKey, amountIn, cands) {
   if (pool.length < 2) return { evaluated: 0, best: null, plan: null, bestSingle };
   const t0 = Date.now();
   const candIdx = new Map(); enabled.forEach((c, i) => candIdx.set(c, i));
+  /* v7.1: パートごとのブリッジ手数料を中継トークン量に換算して先に確定
+     させる (候補ごとに1回だけ)。換算できない候補は feeDeduct = null と
+     なり、その候補を含む割り当てはスコアリングで不成立になる。 */
+  const feeDeductByIdx = new Map();
+  for (const c of enabled) feeDeductByIdx.set(candIdx.get(c), await bridgeFeeInSrcToken(srcKey, c));
+  const feeDeductOf = (cand) => feeDeductByIdx.get(candIdx.get(cand));
   const quoter = makeCrossSplitQuoter(srcKey, dstKey, candIdx);
   const partAmount = (pct) => (amountIn * BigInt(pct)) / 100n;
   /* Batch-scorer for allocations ([{cand, pct, amountIn?}]).
-     v6.4: parts sharing one leg 2 (same intermediate + same leg2Path) get ONE
-     combined leg-2 quote on their summed bridge arrival, distributed back
-     pro-rata (see combineLeg2Groups). Leg 1 stays per-part independent.
-     A part whose leg-1 output is missing or below the bridge minimum makes
+     v7.1 (ユーザー指摘 2026-11-09): 数量計算はパートごとに独立に行う。
+     各パートは「その金額で交換1 → そのパート分のブリッジ手数料を到着額
+     から差し引く → 交換2 をその到着額で見積もり」を独立に計算し、
+     総受け取りはパート合計。v6.4 の leg2 合算見積もり (同一 leg2 を共有
+     するパートの到着額を合算して1回だけ見積もり比例配分) は、分割を
+     前提にした計算になっていないため廃止した。
+     A part whose leg-1 output is missing, whose bridge fee cannot be
+     priced, or whose post-fee arrival is below the bridge minimum makes
      the whole allocation unusable (null), as before. */
   const scoreAllocations = async (allocs) => {
     const partLists = allocs.map((a) => a.map((l) => ({
@@ -1344,33 +1384,40 @@ async function evaluateCrossSplit(srcKey, dstKey, amountIn, cands) {
       for (const p of parts) {
         if (p.amountIn <= 0n) return null;
         const o1 = quoter.getLeg1(p.cand, p.amountIn);
-        if (o1 == null || o1 <= 0n || o1 < (10n ** BigInt(p.cand.tSrc.decimals))) return null;
-        items.push({ cand: p.cand, pct: p.pct, amountIn: p.amountIn, leg1Out: o1 });
+        if (o1 == null || o1 <= 0n) return null;
+        const fee = feeDeductOf(p.cand);
+        if (fee == null) return null;
+        const arrival = o1 - fee;
+        if (arrival < (10n ** BigInt(p.cand.tSrc.decimals))) return null;
+        items.push({ cand: p.cand, pct: p.pct, amountIn: p.amountIn, leg1Out: o1, feeDeduct: fee, arrival });
       }
       return items;
     });
+    const leg2Key = (p) => candIdx.get(p.cand) + "|" + p.arrival.toString();
     const leg2Jobs = new Map();
     for (const items of resolved) {
       if (!items) continue;
-      for (const g of combineLeg2Groups(items)) {
-        const key = g.key + "|" + g.totalIn.toString();
-        if (!quoter.hasLeg2(key)) leg2Jobs.set(key, { key, path: g.cand.leg2Path, totalIn: g.totalIn });
+      for (const p of items) {
+        if (!p.cand.leg2Path) continue;
+        const key = leg2Key(p);
+        if (!quoter.hasLeg2(key)) leg2Jobs.set(key, { key, path: p.cand.leg2Path, totalIn: p.arrival });
       }
     }
     await quoter.ensureLeg2([...leg2Jobs.values()]);
     return resolved.map((items) => {
       if (!items) return null;
-      const parts = items.map((p) => ({ cand: p.cand, pct: p.pct, amountIn: p.amountIn, leg1Out: p.leg1Out, finalOut: p.leg1Out }));
-      for (const g of combineLeg2Groups(items)) {
-        const tot = quoter.getLeg2(g.key + "|" + g.totalIn.toString());
-        if (tot == null || tot <= 0n) return null;
-        const shares = distributeCombinedOut(tot, g.idxs.map((i) => items[i].leg1Out));
-        g.idxs.forEach((pi, k) => { parts[pi].finalOut = shares[k]; });
-      }
       let total = 0n;
-      for (const p of parts) {
-        if (p.finalOut == null || p.finalOut <= 0n) return null;
-        total += p.finalOut;
+      const parts = [];
+      for (const p of items) {
+        let finalOut;
+        if (!p.cand.leg2Path) finalOut = p.arrival;
+        else {
+          const v = quoter.getLeg2(leg2Key(p));
+          if (v == null || v <= 0n) return null;
+          finalOut = v;
+        }
+        parts.push({ cand: p.cand, pct: p.pct, amountIn: p.amountIn, leg1Out: p.leg1Out, feeDeduct: p.feeDeduct, arrival: p.arrival, finalOut });
+        total += finalOut;
       }
       return { parts, totalOut: total };
     });
@@ -1417,8 +1464,8 @@ async function evaluateCrossSplit(srcKey, dstKey, amountIn, cands) {
   await considerAll(pairAllocs);
   // ---- stage 2 (v6.2): hill-climb refinement 5% -> 2% -> 1%. Adds may come
   // from ANY enabled full route (not just the pool), plans may reach 5 parts.
-  // Scoring goes through scoreAllocations, so the v6.4 combined leg-2 rule
-  // applies to every refinement move as well.
+  // Scoring goes through scoreAllocations, so the v7.1 per-part rule
+  // (independent legs, per-part bridge fee) applies to every move as well.
   let refineInfo = { iterations: 0, evaluatedMoves: 0 };
   if (best) {
     const refined = await refineSplitAllocation(
@@ -1431,7 +1478,7 @@ async function evaluateCrossSplit(srcKey, dstKey, amountIn, cands) {
   if (best) {
     // display order: largest part first; then fold the floor-rounding dust
     // into the largest part and re-score the whole plan under the same
-    // (combined leg-2) model, so the parts sum to exactly amountIn without
+    // per-part model, so the parts sum to exactly amountIn without
     // overstating any part's quote.
     best.parts.sort((a, b) => b.pct - a.pct);
     const dust = amountIn - best.parts.reduce((s, p) => s + p.amountIn, 0n);
@@ -1445,40 +1492,52 @@ async function evaluateCrossSplit(srcKey, dstKey, amountIn, cands) {
   return { evaluated, best, plan, bestSingle, refineStats: { partQuotes: quoter.stats.partQuotes, leg2Quotes: quoter.stats.leg2Quotes, batches: quoter.stats.batches, iterations: refineInfo.iterations, ms: Date.now() - t0 } };
 }
 
-/* ---------- v6.5: net-of-fees verdict for a cross-chain split plan ----------
-   ユーザー決定 (2026-11-06): クロスチェーン分割プランは「追加のブリッジ
+/* ---------- v6.5/v7.1: net-of-fees verdict for a cross-chain split plan ----------
+   ユーザー決定 (2026-11-06): クロスチェーン分割プランは「ブリッジ
    メッセージ代を引いても単一ベストに勝つときだけ」カードとして出す。
-   - 追加代 = プランの全パートの nativeFee 合計 − 単一ベスト全体ルートの
-     nativeFee。quoteNative がペアごとに等しい場合は (パート数 − 1) ×
-     quoteNative と一致する。QL1 発は実測で全パート 0 なので追加代は 0。
-   - 換算はこのサイト自身の見積もり機構だけを使う: [42] の追加代を
+   v7.1 (2026-11-09): 手数料はプラン側では各パートの到着額から既に
+   差し引かれている (scoreAllocations / bridgeFeeInSrcToken) ので、
+   ここでは「プランの正味総額」と「単一ベストの正味 (全体ルートの額 −
+   その1回分の手数料を宛先トークン換算)」を比べる。両側とも正味同士。
+   - 換算はこのサイト自身の見積もり機構だけを使う: [42] の手数料を
      Infinite の最良ルートで QOM に替え (fetchBestRoute)、その QOM は
      ブリッジ 1:1 で QL1 の QOM になるので、宛先トークンが QOM 以外なら
      QL1 の最良ルートでもう一度替える。裁定ボードの手数料換算と同じ考え方。
    - 換算できなかった場合は、安全側でプランを出さない (convFailed)。
+   - gain / extraFeeDest は敗北時の注記 (xSplitFeeLose) 用: gain は
+     プラン手数料を戻した額での単一比 (≒グロス勝ち分)、extraFeeDest は
+     プラン手数料と単一手数料の差分 (追加代) の宛先換算。
    DEX ガスは従来どおり含めない (カードにも明示する)。 */
 async function evaluateCrossSplitNet(srcKey, dstKey, toTok, xs) {
   if (!xs || !xs.plan || !xs.bestSingle || !toTok) return null;
-  const gain = xs.plan.totalOut - xs.bestSingle.finalOut;
+  const planNet = xs.plan.totalOut; // already net of each part's bridge fee
   const planFee = xs.plan.parts.reduce((s, p) => s + (p.cand.nativeFee || 0n), 0n);
   const singleFee = xs.bestSingle.nativeFee || 0n;
   const extraFeeNative = planFee > singleFee ? planFee - singleFee : 0n;
   const pctOf = (net) => xs.bestSingle.finalOut > 0n ? (Number(net) / Number(xs.bestSingle.finalOut)) * 100 : 0;
-  if (extraFeeNative <= 0n) return { shown: true, gain, extraFeeNative, extraFeeDest: 0n, netGain: gain, netPct: pctOf(gain), convFailed: false };
-  let extraFeeDest = null;
-  try {
-    const conv1 = await fetchBestRoute(CHAINS.infinite, tokenById("infinite", "native"), tokenById("infinite", "qom"), extraFeeNative);
-    if (conv1 && conv1.amountOut > 0n) {
-      if (toTok.id === "native" || toTok.id === "wqom") {
-        extraFeeDest = conv1.amountOut; // QOM bridges 1:1, so Infinite-side QOM == QL1-side QOM amount
-      } else {
-        const conv2 = await fetchBestRoute(CHAINS.ql1, tokenById("ql1", "wqom"), toTok, conv1.amountOut);
-        if (conv2 && conv2.amountOut > 0n) extraFeeDest = conv2.amountOut;
-      }
-    }
-  } catch (e) { extraFeeDest = null; }
-  if (extraFeeDest == null) return { shown: false, gain, extraFeeNative, extraFeeDest: null, netGain: null, netPct: null, convFailed: true };
-  const netGain = gain - extraFeeDest;
+  if (planFee <= 0n && singleFee <= 0n) {
+    const netGain = planNet - xs.bestSingle.finalOut;
+    return { shown: netGain > 0n, gain: netGain, extraFeeNative: 0n, extraFeeDest: 0n, netGain, netPct: pctOf(netGain), convFailed: false };
+  }
+  const convFee = async (feeNative) => {
+    if (feeNative <= 0n) return 0n;
+    try {
+      const conv1 = await fetchBestRoute(CHAINS.infinite, tokenById("infinite", "native"), tokenById("infinite", "qom"), feeNative);
+      if (!conv1 || conv1.amountOut <= 0n) return null;
+      if (toTok.id === "native" || toTok.id === "wqom") return conv1.amountOut; // QOM bridges 1:1, so Infinite-side QOM == QL1-side QOM amount
+      const conv2 = await fetchBestRoute(CHAINS.ql1, tokenById("ql1", "wqom"), toTok, conv1.amountOut);
+      return conv2 && conv2.amountOut > 0n ? conv2.amountOut : null;
+    } catch (e) { return null; }
+  };
+  const singleFeeDest = await convFee(singleFee);
+  const planFeeDest = await convFee(planFee);
+  if (singleFeeDest == null || planFeeDest == null) {
+    return { shown: false, gain: planNet - xs.bestSingle.finalOut, extraFeeNative, extraFeeDest: null, netGain: null, netPct: null, convFailed: true };
+  }
+  const singleNet = xs.bestSingle.finalOut - singleFeeDest;
+  const netGain = planNet - singleNet;
+  const gain = planNet + planFeeDest - xs.bestSingle.finalOut;
+  const extraFeeDest = planFeeDest - singleFeeDest;
   return { shown: netGain > 0n, gain, extraFeeNative, extraFeeDest, netGain, netPct: pctOf(netGain), convFailed: false };
 }
 
@@ -2950,7 +3009,7 @@ if (typeof document !== "undefined" && document.getElementById && document.getEl
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { CHAINS, STR, LANG, state, parseAmount, formatAmount, formatRate, formatGas, encAddr, encUint, encLegsTail, encodeGetAmountsOut, decodeAmountsOut, buildCandidatePaths, fetchQuotesForTokens, evaluateSplits, buildSwapTx, buildApproveTx, buildSplitTx, applySlippageBps, fetchTokenMeta, tokenById, allTokens, symbolFor, onQuote, onCaAdd, selectRoute, selectSplit, selectedRoute, setChain, estimateGasUnitsSingle, estimateGasUnitsSplit, splitExecutable,
     BRIDGE_PAIRS, BRIDGE_MAILBOX, bridgePairBySym, fetchBestRoute, fetchRoutesOnly, attachImpactsMulti, buildBridgeTx, decodeBridgeTxData, encodeRecipient32, fetchBridgeNativeQuote, fetchBridgeDelivered, readTokenBalance, extractMessageId, quoteCrossPlan, requotePathExact, serializeXFlow, restoreXFlow, saveXFlow, loadXFlow, setMode, setXSrc, xDstKey, onXQuote, renderXCandidates, startXFlow, renderXFlow, checkArrival, doXStep1, doXStep4, doXStep4Legacy, onXAbandon,
-    evaluateCrossSplit, crossSplitPool, requoteSplitPart, makeCrossSplitQuoter, refineSplitAllocation, leg2GroupKey, combineLeg2Groups, distributeCombinedOut, attributeSplitArrivals, crossSplitPhase, startXSplitFlow, renderXSplitFlow, checkSplitArrival, doXSplitStep1, doXSplitStep2, doXSplitStep4,
+    evaluateCrossSplit, crossSplitPool, requoteSplitPart, bridgeFeeInSrcToken, makeCrossSplitQuoter, refineSplitAllocation, leg2GroupKey, combineLeg2Groups, distributeCombinedOut, attributeSplitArrivals, crossSplitPhase, startXSplitFlow, renderXSplitFlow, checkSplitArrival, doXSplitStep1, doXSplitStep2, doXSplitStep4,
     qomTokenId, fetchBridgeFeeInQom, quoteArbRoute, quoteArbBoard, renderArbBoard, onArbScan, startArbFlow, startReturnFlow,
     evaluateCrossSplitNet, buildDeployTx, decodeSplitTxData, SPLIT_BYTECODE, storedAggregator, setStoredAggregator, effectiveAggregator, aggregatorSource, renderAggArea, onDeployAggregator,
     langTargetFor, initLangSelector };

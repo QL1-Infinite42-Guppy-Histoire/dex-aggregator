@@ -1,4 +1,4 @@
-# DEXアグリゲーター（42 Chain / QL1 / 42 Testnet）— v6.5 + v7
+# DEXアグリゲーター（42 Chain / QL1 / 42 Testnet）— v6.5 + v7 + v7.1
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -94,9 +94,21 @@ v6 から、クロスチェーンでも **全体ルート同士の分割** を�
   プールを2回独立見積もりする上振れ」はこれで構造的に消えます。交換1 は
   従来どおりパートごとの独立見積もり（同一チェーン分割と同じ慣例）で、
   実行もパート個別のままです（見積もりモデルだけの変更）。
-- 各パートは、その全体ルートの保存パスをそのパートの金額で実際に
-  見積もり直します（交換1 → ブリッジ1:1 → 交換2。交換1の出力がブリッジ
-  最小量未満のパートは不成立）。最良レッグの額の流用はしません。
+- **パート単位の正味モデル（v7.1）**: v6.4 の合算見積もりは廃止しました
+  （ユーザー指摘 2026-11-09「クロスチェーンの場合、複数ルートへの分割を
+  前提にした数量計算になっていない」）。各パートは、その全体ルートの
+  保存パスをそのパートの金額で実際に見積もり直し（交換1 → **そのパート
+  分のブリッジ手数料（quoteNative の native 払いを中継トークン量に換算）
+  を到着額から差し引く** → 交換2 をその到着額で）、総受け取りはパート
+  合計です。交換2 を共有するパート同士でも合算しません（実行もパート
+  個別なので、見積もりと実行の単位が一致します）。手数料換算できない
+  パートを含む配分は不成立にします。交換1の出力（手数料引き後）が
+  ブリッジ最小量未満のパートも不成立。最良レッグの額の流用はしません。
+  実測の対照（2026-11-09）: 1,000 USDT → QOM では分割ベスト（ネット）
+  1,338,355,372,819 QOM が単一ベスト（ネット 984,504,444,648 QOM）を
+  +35.9% 上回り最適として提示。100 USDT → QOM では分割ベスト（ネット）
+  168,814,901,255 QOM が単一ベスト 170,187,103,121 QOM に届かず、
+  単一が最適のままになりました。
 - **分割プランのカードは、最良の分割が単一ベスト全体ルートに勝ったときだけ**
   出ます。負けるときは「今回は単一ルートがいちばん」と小さく表示するだけです。
   実測の対照（2026-11-06、プールは時々刻々変わります）:
@@ -473,6 +485,25 @@ QOM→42→FISH; +0.05–0.12% even when the shared leg-1 suffix is also
 combined), not the leg-2 double-count, so the old "phantom win"
 reading did not survive measurement.
 
+**New in v7.1 — per-part net quantities for cross-chain splits:** the
+v6.4 combined leg-2 quote is gone (user report, 2026-11-09: the quantity
+math was not premised on the split). Every part is now computed
+independently — leg 1 quoted at the part's own amount, that part's own
+bridge fee (the quoteNative payment, converted into the intermediate
+token) deducted from its arrival, leg 2 quoted at that arrival — and the
+plan total is the sum of the parts. The show/hide verdict compares net
+against net: the plan's net total vs the best single route net of its
+one bridge fee (the v6.5 rule, now applied to totals that are already
+net on both sides). The search itself (candidate pool, 10% grid, 1%
+pairs, hill-climb refinement, max 5 parts) is unchanged; only the
+scoring model was replaced. Measured (2026-11-09): 1,000 USDT -> QOM
+split best (net) 1,338,355,372,819 QOM beats the best single (net
+984,504,444,648 QOM) by +35.9% and is presented as the optimum, R2
+(USDT->FISH->QOM) part included; at 100 USDT -> QOM the split best
+(net) 168,814,901,255 QOM no longer reaches the single best
+170,187,103,121 QOM, so the single route stays the optimum.
+Regression: probe/splitcross-net.cjs.
+
 **New in v6.5 — cross-chain splits must win after bridge fees:** a cross
 split plan card is now shown only when the split still beats the best
 single full route after the EXTRA bridge messaging cost: the plan's
@@ -542,6 +573,22 @@ node tools/bridge/sample_delivery.cjs  # 実送信の messageId → 届け先 ma
 ```
 
 ## 更新履歴
+
+- **v7.1（2026-11-09）**: クロスチェーン分割の数量計算をパート単位の
+  正味モデルに統一（ユーザー指摘「クロスチェーンの場合、複数ルートへの
+  分割を前提にした数量計算になっていない」「クロスチェーンも分割ルート
+  で最適ルートが欲しい」）。v6.4 の交換2合算見積もり（同一 leg2 を共有
+  するパートの到着額を合算して1回見積もり・比例配分）を廃止し、各
+  パートは「その量で交換1 → そのパート分のブリッジ手数料を差し引く →
+  交換2 をその到着額で」を独立に計算、総受け取りはパート合計とした。
+  提示判定も両側ネット同士（プランの正味総額 vs 単一ベストの正味）に
+  変更（従来はプラン側グロス − 追加手数料換算という二段構えだった）。
+  探索自体（候補プール＋10%グリッド＋ペア1%刻み＋山登り微調整、最大
+  5パート）は従来どおりで、評価モデルだけを差し替えた。同一チェーン
+  分割（SplitSwap 実行系）は不変。回帰チェックとして
+  probe/splitcross-net.cjs を追加（パート合計=入力・各パート独立再
+  見積もり一致・100 USDT で単一が最適・1,000 USDT で R2 を含む分割が
+  ネットでも最適、をライブで確認）。
 
 - **v7（2026-11-06）**: 同一チェーン分割を実際に実行できるようにした
   （ユーザー要望「実際にtx送って取引できるようにして」）。SplitSwap は
