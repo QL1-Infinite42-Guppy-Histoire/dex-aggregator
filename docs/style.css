@@ -123,9 +123,12 @@ footer { max-width: 1120px; margin: 0 auto; padding: 4px 20px 28px; color: var(-
 .agg-btn { margin-top: 8px; padding: 8px 14px; border-radius: 12px; border: 1px solid var(--agg-line); background: var(--chip); color: var(--text); cursor: pointer; font-size: .9rem; min-height: 44px; }
 .agg-btn:hover { filter: brightness(1.05); }
 
-/* PC layout (≥1024px): use the width.
-   - Swap panel: controls (pay/receive/slippage/quote) in the left column,
-     route results (plan/route list/min/swap) in the right column.
+/* PC layout (≥1024px): use the full width of the panel.
+   - Swap panel: "You pay" and "You receive" boxes sit side by side on one
+     row, the flip button spans between them, slippage and the quote button
+     run full width below, and the results (plan / route list / notes /
+     swap) unfold full width under the form. No half of the panel is ever
+     reserved-but-empty.
    - Route cards in 2 columns everywhere (swap / cross / arb lists).
    - Add-token panel and How-it-works panel sit side by side. */
 @media (min-width: 1024px) {
@@ -135,18 +138,18 @@ footer { max-width: 1120px; margin: 0 auto; padding: 4px 20px 28px; color: var(-
   .swap-panel { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); column-gap: 20px; align-items: start; }
   .swap-panel > h2 { grid-column: 1 / -1; grid-row: 1; }
   .swap-panel > .pay-box:not(.receive) { grid-column: 1; grid-row: 2; }
-  .swap-panel > .flip-row { grid-column: 1; grid-row: 3; }
-  .swap-panel > .pay-box.receive { grid-column: 1; grid-row: 4; }
-  .swap-panel > .slip { grid-column: 1; grid-row: 5; }
-  .swap-panel > #quoteBtn { grid-column: 1; grid-row: 6; }
-  .swap-panel > #planArea { grid-column: 2; grid-row: 2; }
-  .swap-panel > #routeList { grid-column: 2; grid-row: 3 / span 3; display: flex; }
-  .swap-panel > #splitNote { grid-column: 2; grid-row: 6; }
-  .swap-panel > #minLine { grid-column: 2; grid-row: 7; }
-  .swap-panel > #swapBtn { grid-column: 1 / -1; grid-row: 8; }
-  .swap-panel > #txResult { grid-column: 1 / -1; grid-row: 9; }
-  .swap-panel > #aggArea { grid-column: 1 / -1; grid-row: 10; }
-  .swap-panel > p.count:last-child { grid-column: 1 / -1; grid-row: 11; }
+  .swap-panel > .pay-box.receive { grid-column: 2; grid-row: 2; }
+  .swap-panel > .flip-row { grid-column: 1 / -1; grid-row: 3; }
+  .swap-panel > .slip { grid-column: 1 / -1; grid-row: 4; }
+  .swap-panel > #quoteBtn { grid-column: 1 / -1; grid-row: 5; }
+  .swap-panel > #planArea { grid-column: 1 / -1; grid-row: 6; }
+  .swap-panel > #routeList { grid-column: 1 / -1; grid-row: 7; display: grid; }
+  .swap-panel > #splitNote { grid-column: 1 / -1; grid-row: 8; }
+  .swap-panel > #minLine { grid-column: 1 / -1; grid-row: 9; }
+  .swap-panel > #swapBtn { grid-column: 1 / -1; grid-row: 10; }
+  .swap-panel > #txResult { grid-column: 1 / -1; grid-row: 11; }
+  .swap-panel > #aggArea { grid-column: 1 / -1; grid-row: 12; }
+  .swap-panel > p.count:last-child { grid-column: 1 / -1; grid-row: 13; }
   .layout { grid-template-columns: 1fr 1fr; column-gap: 16px; }
   .layout > .panel { grid-column: 1 / -1; }
   .layout > #caPanel { grid-column: 1; }
