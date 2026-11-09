@@ -502,7 +502,13 @@ split best (net) 1,338,355,372,819 QOM beats the best single (net
 (USDT->FISH->QOM) part included; at 100 USDT -> QOM the split best
 (net) 168,814,901,255 QOM no longer reaches the single best
 170,187,103,121 QOM, so the single route stays the optimum.
-Regression: probe/splitcross-net.cjs.
+Regression: probe/splitcross-net.cjs. Finishing touch (same day): the
+card's "% vs best single route" line is now also net-vs-net
+(plan net total / single net − 1, via a singleNet value returned by
+evaluateCrossSplitNet); it previously mixed the plan's net total with
+the single route's gross total. Measured: the card shows +35.94% for
+1,000 USDT -> QOM, matching the recomputation (the mixed formula
+would have shown +35.43%).
 
 **New in v6.5 — cross-chain splits must win after bridge fees:** a cross
 split plan card is now shown only when the split still beats the best
@@ -588,7 +594,12 @@ node tools/bridge/sample_delivery.cjs  # 実送信の messageId → 届け先 ma
   分割（SplitSwap 実行系）は不変。回帰チェックとして
   probe/splitcross-net.cjs を追加（パート合計=入力・各パート独立再
   見積もり一致・100 USDT で単一が最適・1,000 USDT で R2 を含む分割が
-  ネットでも最適、をライブで確認）。
+  ネットでも最適、をライブで確認）。仕上げとして、カードの「単一
+  ベストより +X%」行もネット同士の比較に統一した（従来はプランの
+  正味総額と単一ベストの総額（手数料引き前）の混在比較だったため、
+  evaluateCrossSplitNet が singleNet を返すようにし、% = プラン正味
+  総額 ÷ 単一正味 − 1 とした。実測: 1,000 USDT → QOM で表示 +35.94%
+  が再計算と一致。旧式では +35.43%）。
 
 - **v7（2026-11-06）**: 同一チェーン分割を実際に実行できるようにした
   （ユーザー要望「実際にtx送って取引できるようにして」）。SplitSwap は

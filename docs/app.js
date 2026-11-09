@@ -1507,6 +1507,8 @@ async function evaluateCrossSplit(srcKey, dstKey, amountIn, cands) {
    - gain / extraFeeDest は敗北時の注記 (xSplitFeeLose) 用: gain は
      プラン手数料を戻した額での単一比 (≒グロス勝ち分)、extraFeeDest は
      プラン手数料と単一手数料の差分 (追加代) の宛先換算。
+   - singleNet (単一ベストの正味) も返す: カードの「単一ベストより +X%」
+     行 (splitVsSingle) が、プランの正味総額とネット同士で比べるため。
    DEX ガスは従来どおり含めない (カードにも明示する)。 */
 async function evaluateCrossSplitNet(srcKey, dstKey, toTok, xs) {
   if (!xs || !xs.plan || !xs.bestSingle || !toTok) return null;
@@ -1517,7 +1519,7 @@ async function evaluateCrossSplitNet(srcKey, dstKey, toTok, xs) {
   const pctOf = (net) => xs.bestSingle.finalOut > 0n ? (Number(net) / Number(xs.bestSingle.finalOut)) * 100 : 0;
   if (planFee <= 0n && singleFee <= 0n) {
     const netGain = planNet - xs.bestSingle.finalOut;
-    return { shown: netGain > 0n, gain: netGain, extraFeeNative: 0n, extraFeeDest: 0n, netGain, netPct: pctOf(netGain), convFailed: false };
+    return { shown: netGain > 0n, gain: netGain, extraFeeNative: 0n, extraFeeDest: 0n, netGain, netPct: pctOf(netGain), convFailed: false, singleNet: xs.bestSingle.finalOut };
   }
   const convFee = async (feeNative) => {
     if (feeNative <= 0n) return 0n;
@@ -1532,13 +1534,13 @@ async function evaluateCrossSplitNet(srcKey, dstKey, toTok, xs) {
   const singleFeeDest = await convFee(singleFee);
   const planFeeDest = await convFee(planFee);
   if (singleFeeDest == null || planFeeDest == null) {
-    return { shown: false, gain: planNet - xs.bestSingle.finalOut, extraFeeNative, extraFeeDest: null, netGain: null, netPct: null, convFailed: true };
+    return { shown: false, gain: planNet - xs.bestSingle.finalOut, extraFeeNative, extraFeeDest: null, netGain: null, netPct: null, convFailed: true, singleNet: null };
   }
   const singleNet = xs.bestSingle.finalOut - singleFeeDest;
   const netGain = planNet - singleNet;
   const gain = planNet + planFeeDest - xs.bestSingle.finalOut;
   const extraFeeDest = planFeeDest - singleFeeDest;
-  return { shown: netGain > 0n, gain, extraFeeNative, extraFeeDest, netGain, netPct: pctOf(netGain), convFailed: false };
+  return { shown: netGain > 0n, gain, extraFeeNative, extraFeeDest, netGain, netPct: pctOf(netGain), convFailed: false, singleNet };
 }
 
 /* ---------- v6: split-flow arrival attribution (pure; harness-tested) ----------
@@ -2188,7 +2190,13 @@ function renderXCandidates() {
   const planShown = !!(xs && xs.plan && net && net.shown);
   if (planShown) {
     const plan = xs.plan;
-    const diff = xs.bestSingle && xs.bestSingle.finalOut > 0n ? (Number(plan.totalOut - xs.bestSingle.finalOut) / Number(xs.bestSingle.finalOut)) * 100 : 0;
+    /* 「単一ベストより +X%」行もネット同士で比べる (v7.1 仕上げ):
+       プランの正味総額 (plan.totalOut) ÷ 単一ベストの正味 (net.singleNet)。
+       singleNet が無い場合 (換算失敗時はカード自体が出ないので実質到達
+       しない) は従来の総額比較にフォールバックする。 */
+    const diff = net.singleNet != null && net.singleNet > 0n
+      ? (Number(plan.totalOut) / Number(net.singleNet) - 1) * 100
+      : (xs.bestSingle && xs.bestSingle.finalOut > 0n ? (Number(plan.totalOut - xs.bestSingle.finalOut) / Number(xs.bestSingle.finalOut)) * 100 : 0);
     const partsHtml = plan.parts.map((p) =>
       '<span class="split-leg"><span class="split-leg-head"><span class="pct-chip">' + p.pct + '%</span>' +
       '<span class="split-path">' + fullPathHtml(p.cand, fromTok, toTok) + '</span>' +
