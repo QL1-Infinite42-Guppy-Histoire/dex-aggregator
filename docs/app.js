@@ -116,7 +116,12 @@ const STR = {
     xsAutoDone: "交換なしで完了（届いたトークンがそのまま受け取りトークンです）",
     xsStepFailBadge: "失敗",
     xDisabledOsak: "42 Chain → QL1 の OSAK ブリッジは、公式ルーターの送信実績が確認できていないため無効です（QL1 → 42 Chain は実績あり）",
-    xDisabledWrap: "QOM のまま送るには WQOM の形が必要で、このサイトでは包み直しが未対応のため、この組み合わせでは使えません（出すトークンで WQOM を選べば使えます）",
+    xSwap1Wrap: (amt) => "ラップ（QOM → WQOM、1:1）→ " + amt + " WQOM",
+    xWrapMark: "（ラップ）",
+    xStep1WrapTitle: "ステップ1: ラップ（QOM → WQOM）",
+    xStep1WrapDesc: (a) => a + " を WQOM に包み直します（ラップ、1:1 で同額）。ブリッジは WQOM の形で送るため、この手順が最初に必要です。",
+    xStep1WrapBtn: "ステップ1を実行（ラップ）",
+    xWrapPending: "ラップの取引がまだチェーンで確認できません。少し待ってからもう一度押してください（自動で二重に包むことはありません）",
     xEstNote: "最終見積もりは今の値段での計算です。ブリッジの到着は数分かかることがあり、最後の交換は到着時点の値段で決まります。",
     xNeedConnect: "先にウォレットを接続してください（上のボタン）", xStepDone: "完了", xStepWait: "まだ", xStepNow: "いまここ",
     xStep1Title: "ステップ1: 最初の交換", xStep1Desc: (a, b, label) => a + " を中継トークン " + b + " に交換します（ルート: " + label + "）。",
@@ -247,7 +252,12 @@ const STR = {
     xsAutoDone: "Done with no swap (the arrived token already is the token you receive)",
     xsStepFailBadge: "Failed",
     xDisabledOsak: "The 42 Chain -> QL1 OSAK bridge is disabled: no sends through the official router could be verified (QL1 -> 42 Chain is verified)",
-    xDisabledWrap: "Sending QOM as-is needs it in WQOM form, and wrapping is not supported on this site, so this combination is unavailable (pick WQOM as the token you pay to use it)",
+    xSwap1Wrap: (amt) => "Wrap (QOM -> WQOM, 1:1) -> " + amt + " WQOM",
+    xWrapMark: "(wrap)",
+    xStep1WrapTitle: "Step 1: Wrap (QOM -> WQOM)",
+    xStep1WrapDesc: (a) => "Wrap " + a + " into WQOM (1:1, the same amount). The bridge sends the WQOM form, so this step comes first.",
+    xStep1WrapBtn: "Run step 1 (wrap)",
+    xWrapPending: "The wrap transaction is not confirmed on-chain yet. Wait a moment and press again (it never wraps twice automatically)",
     xEstNote: "The final estimate uses current prices. Bridge arrival can take several minutes, and the last swap executes at arrival-time prices.",
     xNeedConnect: "Connect your wallet first (button above)", xStepDone: "Done", xStepWait: "Pending", xStepNow: "Current step",
     xStep1Title: "Step 1: First swap", xStep1Desc: (a, b, label) => "Swap " + a + " into the bridge token " + b + " (route: " + label + ").",
@@ -407,6 +417,7 @@ const SEL = {
   transferRemote: "0x81b4e8b4", quoteNative: "0xe9e64e40", quoteBridge: "0x15b2393a", mailboxDelivered: "0xe495f1d4",
   symbol: "0x95d89b41", name: "0x06fdde03", decimals: "0x313ce567",
   balanceOf: "0x70a08231", allowance: "0xdd62ed3e", approve: "0x095ea7b3",
+  deposit: "0xd0e30db0", // WETH/WQOM deposit() (payable, no args) — v7.2 ラップ用
   swapTokensForTokens: "0x38ed1739", swapETHForTokens: "0x7ff36ab5", swapTokensForETH: "0x18cbafe5",
   // contracts/SplitSwap.sol のセレクタ (v7 で Leg に amountOutMin を追加した
   // 再コンパイル済みABIから取得。solc 0.8.26 / optimizer 200 runs / EVM paris)
@@ -869,6 +880,36 @@ function buildSwapTx(chainObj, fromTok, toTok, route, account, slippagePct, nowS
 function buildApproveTx(tokenAddr, spender, amount) {
   return { to: tokenAddr.toLowerCase(), data: SEL.approve + encAddr(spender) + encUint(amount), value: 0n };
 }
+/* v7.2: ラップ tx (ネイティブ QOM -> WQOM)。WQOM コントラクトの deposit()
+   に金額ちょうどを native で送るだけ (1:1 で同額の WQOM が返る。見積もり
+   ではなく正確な等価変換)。宛先はチェーンの nativeAnchor (= WQOM 住所)。 */
+function buildWrapTx(chainObj, amount) {
+  return { to: chainObj.nativeAnchor.toLowerCase(), data: SEL.deposit, value: BigInt(amount), functionName: "deposit" };
+}
+/* buildWrapTx の calldata 検証用 (ハーネス/プローブの照合用)。deposit() は
+   引数なしなので、セレクタ一致だけを確認する。 */
+function decodeWrapTxData(data) {
+  if (!data || data.slice(0, 10).toLowerCase() !== SEL.deposit) return null;
+  if (data.length !== 10) return null;
+  return { functionName: "deposit" };
+}
+/* v7.2: ラップの完了をチェーンの証拠で判定する (既存ステップと同じ流儀:
+   レシートの成否 + WQOM 残高のベースライン比デルタ)。
+   戻り値: "ok" = レシート成功、または残高が amountIn 以上増えた /
+   "failed" = レシートが失敗 (0x0) / "pending" = まだどちらでも確認できない。
+   txHash がある場合はまずレシートを見る (waitReceipt は最大 ~90 秒ポーリング)。 */
+async function wrapLanded(chainObj, wqomAddr, account, baseline, amountIn, txHash) {
+  if (txHash) {
+    const rc = await waitReceipt(txHash);
+    if (rc && rc.status === "0x0") return "failed";
+    if (rc) return "ok";
+  }
+  try {
+    const after = await readTokenBalance(chainObj, wqomAddr, account);
+    if (after - BigInt(baseline || "0") >= amountIn) return "ok";
+  } catch (e) { /* fall through to pending */ }
+  return "pending";
+}
 /* SplitSwap の作成バイトコード (contracts/SplitSwap.json と同一。solc
    0.8.26 + optimizer 200 runs、EVM ターゲット paris、5601 bytes)。サイト内デプロイは
    このバイトコードにチェーンの DEX ルーター住所を付けて送るだけ。 */
@@ -1045,6 +1086,10 @@ function extractMessageId(receipt) {
    実際に見積もり直した値 (最良レッグの額の流用はしない)。
    - 交換1: 上位3パス (直接含む) を保持。出すトークン自体が中継トークンの場合は
      交換なし (直接ブリッジ) の1バリアント。
+   - v7.2: QL1 で出すトークンが素の QOM の場合、QOM 中継は「ラップ必須の
+     直接ブリッジ」バリアント (leg1Wrap) として見積もり対象に入る (以前は
+     無効化していた)。ラップは 1:1 の正確な等価変換なので見積もり値は
+     amountIn そのまま。実行時は案内フローのステップ1で deposit() を送る。
    - 交換2: 各交換1バリアントには最良パスを、交換1最良バリアントには上位3パスを組み合わせる。
    - 重複する全体パスは除去。中継ごとに最大4件、全体で最大24件
      (中継ごとの最良1件とベンチマークの全体ルートは必ず残す)。
@@ -1063,11 +1108,16 @@ async function quoteCrossPlan(srcKey, fromTok, dstKey, toTok, amountIn) {
     if (!tSrc || !tDst) continue;
     const enabledDir = srcKey === "ql1" ? pair.enabledFromQl1 : pair.enabledFromInf;
     if (!enabledDir) { disabled.push({ pair, tSrc, tDst, enabled: false, reason: t("xDisabledOsak") }); continue; }
-    if (srcKey === "ql1" && fromTok.id === "native" && pair.sym === "QOM") { disabled.push({ pair, tSrc, tDst, enabled: false, reason: t("xDisabledWrap") }); continue; }
     // --- leg 1 variants: source -> bridge token (top distinct paths) ---
-    let leg1Vars; // [{route|null, out}]
+    let leg1Vars; // [{route|null, out, wrap?}]
     if (fromTok.address.toLowerCase() === tSrc.address.toLowerCase()) {
-      leg1Vars = [{ route: null, out: amountIn }];
+      /* 直接ブリッジ。v7.2: 出すトークンがそのチェーンの素のネイティブで、
+         中継トークンがそのラップ形 (QL1 の QOM -> WQOM) の場合は、ブリッジが
+         ERC20 の形を引くため実行時にラップ手順が要る。その場合は wrap フラグを
+         立てて見積もり対象に残す (1:1 なので out は amountIn のまま)。 */
+      const needsWrap = !!fromTok.isNative && !!src.nativeAnchor
+        && src.nativeAnchor.toLowerCase() === tSrc.address.toLowerCase();
+      leg1Vars = [{ route: null, out: amountIn, wrap: needsWrap }];
     } else {
       const all = await fetchRoutesOnly(src, fromTok, tSrc, amountIn);
       if (!all.length) continue;
@@ -1085,6 +1135,7 @@ async function quoteCrossPlan(srcKey, fromTok, dstKey, toTok, amountIn) {
       combos.set(key, {
         pair, tSrc, tDst, enabled: true,
         swap1Route: v.route, swap1Out: v.out, bridgeOut: v.out,
+        leg1Wrap: !!v.wrap,
         swap2Route: r2, finalOut,
         leg1Path: v.route ? v.route.path.slice() : null,
         leg2Path: r2 ? r2.path.slice() : null,
@@ -2095,8 +2146,9 @@ function fillXSelects() {
     sel.innerHTML = toks.map((tk) => '<option value="' + esc(tk.id) + '">' + esc(tk.symbol) + (tk.name ? " — " + esc(tk.name) : "") + "</option>").join("");
     if (toks.some((tk) => tk.id === cur)) sel.value = cur;
   };
-  // On QL1 the pure-native QOM entry stays selectable as a source (it swaps via WQOM),
-  // but the bridge itself always pulls the WQOM form (see the QOM wrap rule in quoteCrossPlan).
+  // On QL1 the pure-native QOM entry stays selectable as a source (it swaps via WQOM).
+  // The bridge itself always pulls the WQOM form: since v7.2 the QOM bridge pair is
+  // quoted for native QOM too, as a wrap-first route (see leg1Wrap in quoteCrossPlan).
   mk($("xFromToken"), allTokens(state.xSrc), state.xSrc === "ql1" ? "qswap" : "fish");
   mk($("xToToken"), allTokens(xDstKey()), xDstKey() === "infinite" ? "fish" : "qswap");
   if (!$("xFromToken").value) $("xFromToken").value = allTokens(state.xSrc)[0].id;
@@ -2158,6 +2210,9 @@ function fullPathHtml(c, fromTok, toTok) {
       const s = symbolFor(state.xSrc, a);
       return tokSpan(i === c.leg1Path.length - 1 ? s + "（" + srcLabel + "）" : s);
     }).join(arrow);
+  } else if (c.leg1Wrap) {
+    // v7.2: QOM ->（ラップ）WQOM と明示する (そのままブリッジと区別する)
+    leg1 = tokSpan(fromTok.symbol + "（" + srcLabel + "）") + arrow + '<span class="tok wrap-mark">' + esc(t("xWrapMark")) + "</span> " + tokSpan(c.tSrc.symbol);
   } else {
     leg1 = tokSpan(fromTok.symbol + "（" + srcLabel + "）");
   }
@@ -2227,7 +2282,7 @@ function renderXCandidates() {
     if (!c.enabled) {
       return '<div class="route-card" style="opacity:.55"><span class="r-head"><span class="r-rank">' + esc(t("xVia")) + " " + esc(c.pair.sym) + '</span></span><span class="r-line">' + esc(c.reason || "") + "</span></div>";
     }
-    const s1 = c.swap1Route ? pathLabel(state.xSrc, c.swap1Route.path) + " → " + formatAmount(c.swap1Out, c.tSrc.decimals, 6) + " " + c.tSrc.symbol + (c.swap1Route.priceImpactPct != null ? " (" + t("routeImpact", c.swap1Route.priceImpactPct.toFixed(2)) + ")" : "") : t("xDirectBridge") + ": " + formatAmount(c.swap1Out, c.tSrc.decimals, 6) + " " + c.tSrc.symbol;
+    const s1 = c.swap1Route ? pathLabel(state.xSrc, c.swap1Route.path) + " → " + formatAmount(c.swap1Out, c.tSrc.decimals, 6) + " " + c.tSrc.symbol + (c.swap1Route.priceImpactPct != null ? " (" + t("routeImpact", c.swap1Route.priceImpactPct.toFixed(2)) + ")" : "") : c.leg1Wrap ? t("xSwap1Wrap", formatAmount(c.swap1Out, c.tSrc.decimals, 6)) : t("xDirectBridge") + ": " + formatAmount(c.swap1Out, c.tSrc.decimals, 6) + " " + c.tSrc.symbol;
     const fee = state.xSrc === "infinite" ? t("xBridgeFeeZero") + " / " + t("xNativeFeeInf", formatAmount(c.nativeFee, 18, 4)) : t("xBridgeFeeZero") + " / " + t("xNativeFeeQl1");
     const s2 = c.swap2Route ? pathLabel(xDstKey(), c.swap2Route.path) + " → " + formatAmount(c.finalOut, toTok.decimals, 6) + " " + toTok.symbol + (c.swap2Route.priceImpactPct != null ? " (" + t("routeImpact", c.swap2Route.priceImpactPct.toFixed(2)) + ")" : "") : formatAmount(c.finalOut, toTok.decimals, 6) + " " + toTok.symbol;
     const hops = (c.swap1Route ? c.swap1Route.hops : 0) + (c.swap2Route ? c.swap2Route.hops : 0);
@@ -2269,12 +2324,13 @@ async function startXFlow(routeOrSym, opts) {
   const src = CHAINS[state.xSrc], dst = CHAINS[xDstKey()];
   const fromTok = tokenById(state.xSrc, state.xQuote.fromId);
   let baselineT = 0n;
-  try { baselineT = cand.swap1Route ? await readTokenBalance(src, cand.tSrc.address, state.account) : 0n; } catch (e) { /* optional */ }
+  try { baselineT = (cand.swap1Route || cand.leg1Wrap) ? await readTokenBalance(src, cand.tSrc.address, state.account) : 0n; } catch (e) { /* optional */ }
   state.xflow = {
-    v: 1, pathsV5: true, step: cand.swap1Route ? 1 : 2,
+    v: 1, pathsV5: true, step: (cand.swap1Route || cand.leg1Wrap) ? 1 : 2,
     srcKey: state.xSrc, dstKey: xDstKey(), fromId: state.xQuote.fromId, toId: state.xQuote.toId,
     amountText: $("xAmount").value, amountIn: state.xQuote.amountIn,
     sym, tSrcId: cand.tSrc.id, tDstId: cand.tDst.id,
+    leg1Wrap: !!cand.leg1Wrap, wrapTx: null,
     swap1Path: cand.swap1Route ? cand.swap1Route.path.slice() : null, swap1Out: cand.swap1Out.toString(),
     swap2Path: cand.swap2Route ? cand.swap2Route.path.slice() : null, swap2Out: cand.finalOut.toString(),
     bridgeOut: cand.bridgeOut.toString(), finalEst: cand.finalOut.toString(), nativeFee: cand.nativeFee.toString(),
@@ -2309,11 +2365,12 @@ async function startXSplitFlow() {
     idx: i, pct: p.pct, sym: p.cand.pair.sym, tSrcId: p.cand.tSrc.id, tDstId: p.cand.tDst.id,
     amountIn: p.amountIn.toString(),
     leg1Path: p.cand.leg1Path ? p.cand.leg1Path.slice() : null,
+    leg1Wrap: !!p.cand.leg1Wrap, wrapTx: null,
     leg2Path: p.cand.leg2Path ? p.cand.leg2Path.slice() : null,
     estLeg1Out: p.leg1Out.toString(), estFinalOut: p.finalOut.toString(),
     nativeFee: (p.cand.nativeFee || 0n).toString(),
-    step: p.cand.leg1Path ? 0 : 1,
-    received: p.cand.leg1Path ? null : p.amountIn.toString(),
+    step: (p.cand.leg1Path || p.cand.leg1Wrap) ? 0 : 1,
+    received: (p.cand.leg1Path || p.cand.leg1Wrap) ? null : p.amountIn.toString(),
     baselineT: null, swap1Tx: null, bridgeTx: null, bridgeAt: null, messageId: null,
     bridgedAmount: null, arrivedAmt: null, arrivedFlag: false, swap2Tx: null,
     error: null, errorPhase: null,
@@ -2362,10 +2419,12 @@ function renderXSplitFlow() {
     html += '<div class="xpart">' + head(p) +
       '<p class="count">' + esc(p.leg1Path
         ? t("xStep1Desc", formatAmount(BigInt(p.amountIn), fromTok.decimals, 6) + " " + fromTok.symbol, tSrc.symbol, pathLabel(f.srcKey, p.leg1Path))
-        : t("xStep1Skip")) + "</p>" +
+        : p.leg1Wrap
+          ? t("xStep1WrapDesc", formatAmount(BigInt(p.amountIn), fromTok.decimals, 6) + " " + fromTok.symbol)
+          : t("xStep1Skip")) + "</p>" +
       '<p class="count">' + esc(badge(p, 1)) + "</p>" +
       (p.received != null ? '<p class="count">' + esc(t("xsReceived", formatAmount(BigInt(p.received), tSrc.decimals, 6), tSrc.symbol)) + "</p>" : "") +
-      (p.step === 0 ? '<button type="button" data-split-act="s1" data-idx="' + p.idx + '">' + esc(t("xStep1Btn")) + "</button>" : "") +
+      (p.step === 0 ? '<button type="button" data-split-act="s1" data-idx="' + p.idx + '">' + esc(p.leg1Wrap ? t("xStep1WrapBtn") : t("xStep1Btn")) + "</button>" : "") +
       (p.swap1Tx ? '<p class="count">' + esc(shortHash(p.swap1Tx)) + "</p>" : "") +
       (p.step === "error" && p.errorPhase === 1 ? '<p class="count" style="color:#ff9d9d">' + esc(p.error || "") + "</p>" : "") + "</div>";
   }
@@ -2452,6 +2511,28 @@ async function doXSplitStep1(idx) {
     if (!state.account) throw new Error(t("xNeedConnect"));
     await ensureChain(src);
     const amountIn = BigInt(p.amountIn);
+    if (p.leg1Wrap) {
+      /* v7.2: ラップ手順 (パート分ちょうどを deposit())。再開時は wrapTx の
+         レシート / WQOM 残高デルタというチェーンの証拠で完了を確認し、
+         二重に包まない。baselineT は最初の試行でだけ取る (再開時に取り直すと
+         ラップ済みの残高がベースラインに混ざるため)。受け取りは 1:1 で
+         amountIn ちょうど。 */
+      if (p.baselineT == null) p.baselineT = (await readTokenBalance(src, tSrc.address, state.account)).toString();
+      let st = await wrapLanded(src, tSrc.address, state.account, p.baselineT, amountIn, p.wrapTx);
+      if (st === "failed") { p.wrapTx = null; p.swap1Tx = null; saveXFlow(); throw new Error(t("statusSwapFailedTx")); }
+      if (st !== "ok") {
+        if (p.wrapTx) throw new Error(t("xWrapPending"));
+        const tx = buildWrapTx(src, amountIn);
+        setXStatus(t("xWorking"));
+        const hash = await sendTx(tx, "0x" + tx.value.toString(16));
+        p.wrapTx = hash; p.swap1Tx = hash; saveXFlow();
+        st = await wrapLanded(src, tSrc.address, state.account, p.baselineT, amountIn, hash);
+        if (st === "failed") { p.wrapTx = null; p.swap1Tx = null; saveXFlow(); throw new Error(t("statusSwapFailedTx")); }
+        if (st !== "ok") throw new Error(t("xWrapPending"));
+      }
+      p.received = amountIn.toString(); p.step = 1; saveXFlow(); renderXFlow();
+      return;
+    }
     p.baselineT = (await readTokenBalance(src, tSrc.address, state.account)).toString();
     const fresh = await requotePathExact(src, amountIn, p.leg1Path);
     if (fresh == null) {
@@ -2589,10 +2670,14 @@ function renderXFlow() {
   // step 1
   const step1Text = f.swap1Path
     ? t("xStep1Desc", formatAmount(BigInt(f.amountIn), fromTok.decimals, 6) + " " + fromTok.symbol, tSrc.symbol, pathLabel(f.srcKey, f.swap1Path))
-    : t("xStep1Skip");
-  html += '<div class="xstep' + (f.step === 1 ? " current" : "") + '"><div class="xstep-head"><b>' + esc(t("xStep1Title")) + '</b><span class="badge-step">' + esc(st(1)) + '</span></div>' +
+    : f.leg1Wrap
+      ? t("xStep1WrapDesc", formatAmount(BigInt(f.amountIn), fromTok.decimals, 6) + " " + fromTok.symbol)
+      : t("xStep1Skip");
+  const step1Title = f.leg1Wrap ? t("xStep1WrapTitle") : t("xStep1Title");
+  const step1Btn = f.leg1Wrap ? t("xStep1WrapBtn") : t("xStep1Btn");
+  html += '<div class="xstep' + (f.step === 1 ? " current" : "") + '"><div class="xstep-head"><b>' + esc(step1Title) + '</b><span class="badge-step">' + esc(st(1)) + '</span></div>' +
     '<p class="count">' + esc(step1Text) + "</p>" +
-    (f.step === 1 ? '<button type="button" id="xStep1Btn">' + esc(t("xStep1Btn")) + "</button>" : "") + (f.swap1Tx ? '<p class="count">' + esc(shortHash(f.swap1Tx)) + "</p>" : "") + "</div>";
+    (f.step === 1 ? '<button type="button" id="xStep1Btn">' + esc(step1Btn) + "</button>" : "") + (f.swap1Tx ? '<p class="count">' + esc(shortHash(f.swap1Tx)) + "</p>" : "") + "</div>";
   // step 2
   html += '<div class="xstep' + (f.step === 2 ? " current" : "") + '"><div class="xstep-head"><b>' + esc(t("xStep2Title")) + '</b><span class="badge-step">' + esc(st(2)) + '</span></div>' +
     '<p class="count">' + esc(f.srcKey === "infinite" ? t("xStep2DescInf", amtBridge, tSrc.symbol) : t("xStep2DescQl1", amtBridge, tSrc.symbol)) + "</p>" +
@@ -2667,6 +2752,28 @@ async function doXStep1() {
   try {
     if (!state.account) throw new Error(t("xNeedConnect"));
     await ensureChain(src);
+    if (f.leg1Wrap) {
+      /* v7.2: ラップ手順。deposit() で amountIn ちょうどを WQOM にする。
+         再開時 (wrapTx 保存済み) は二重に包まず、レシート/WQOM残高という
+         チェーンの証拠で完了を確認してから次へ進む。ラップは 1:1 で正確
+         なので、ブリッジ量は見積もりではなく amountIn そのもの。 */
+      const amountIn = BigInt(f.amountIn);
+      let st = await wrapLanded(src, tSrc.address, state.account, f.baselineT, amountIn, f.wrapTx);
+      if (st === "failed") { f.wrapTx = null; f.swap1Tx = null; saveXFlow(); throw new Error(t("statusSwapFailedTx")); }
+      if (st !== "ok") {
+        if (f.wrapTx) throw new Error(t("xWrapPending"));
+        const tx = buildWrapTx(src, amountIn);
+        setXStatus(t("xWorking"));
+        const hash = await sendTx(tx, "0x" + tx.value.toString(16));
+        f.wrapTx = hash; f.swap1Tx = hash; saveXFlow();
+        st = await wrapLanded(src, tSrc.address, state.account, f.baselineT, amountIn, hash);
+        if (st === "failed") { f.wrapTx = null; f.swap1Tx = null; saveXFlow(); throw new Error(t("statusSwapFailedTx")); }
+        if (st !== "ok") throw new Error(t("xWrapPending"));
+      }
+      f.bridgeOut = amountIn.toString();
+      f.step = 2; saveXFlow(); renderXFlow();
+      return;
+    }
     let amountOut = BigInt(f.swap1Out);
     if (f.pathsV5) {
       // re-quote the CHOSEN route's exact path for min-out; if it is gone, stop
@@ -3015,7 +3122,7 @@ if (typeof document !== "undefined" && document.getElementById && document.getEl
   try { initApp(); } catch (e) { /* harness stubs may lack full DOM */ }
 }
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { CHAINS, STR, LANG, state, parseAmount, formatAmount, formatRate, formatGas, encAddr, encUint, encLegsTail, encodeGetAmountsOut, decodeAmountsOut, buildCandidatePaths, fetchQuotesForTokens, evaluateSplits, buildSwapTx, buildApproveTx, buildSplitTx, applySlippageBps, fetchTokenMeta, tokenById, allTokens, symbolFor, onQuote, onCaAdd, selectRoute, selectSplit, selectedRoute, setChain, estimateGasUnitsSingle, estimateGasUnitsSplit, splitExecutable,
+  module.exports = { CHAINS, STR, LANG, state, parseAmount, formatAmount, formatRate, formatGas, encAddr, encUint, encLegsTail, encodeGetAmountsOut, decodeAmountsOut, buildCandidatePaths, fetchQuotesForTokens, evaluateSplits, buildSwapTx, buildApproveTx, buildWrapTx, decodeWrapTxData, wrapLanded, buildSplitTx, applySlippageBps, fetchTokenMeta, tokenById, allTokens, symbolFor, onQuote, onCaAdd, selectRoute, selectSplit, selectedRoute, setChain, estimateGasUnitsSingle, estimateGasUnitsSplit, splitExecutable,
     BRIDGE_PAIRS, BRIDGE_MAILBOX, bridgePairBySym, fetchBestRoute, fetchRoutesOnly, attachImpactsMulti, buildBridgeTx, decodeBridgeTxData, encodeRecipient32, fetchBridgeNativeQuote, fetchBridgeDelivered, readTokenBalance, extractMessageId, quoteCrossPlan, requotePathExact, serializeXFlow, restoreXFlow, saveXFlow, loadXFlow, setMode, setXSrc, xDstKey, onXQuote, renderXCandidates, startXFlow, renderXFlow, checkArrival, doXStep1, doXStep4, doXStep4Legacy, onXAbandon,
     evaluateCrossSplit, crossSplitPool, requoteSplitPart, bridgeFeeInSrcToken, makeCrossSplitQuoter, refineSplitAllocation, leg2GroupKey, combineLeg2Groups, distributeCombinedOut, attributeSplitArrivals, crossSplitPhase, startXSplitFlow, renderXSplitFlow, checkSplitArrival, doXSplitStep1, doXSplitStep2, doXSplitStep4,
     qomTokenId, fetchBridgeFeeInQom, quoteArbRoute, quoteArbBoard, renderArbBoard, onArbScan, startArbFlow, startReturnFlow,

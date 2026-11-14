@@ -1,4 +1,4 @@
-# DEXアグリゲーター（42 Chain / QL1 / 42 Testnet）— v6.5 + v7 + v7.1
+# DEXアグリゲーター（42 Chain / QL1 / 42 Testnet）— v6.5 + v7 + v7.1 + v7.2
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -485,6 +485,25 @@ QOM→42→FISH; +0.05–0.12% even when the shared leg-1 suffix is also
 combined), not the leg-2 double-count, so the old "phantom win"
 reading did not survive measurement.
 
+**New in v7.2 — the direct QOM bridge is quoted for native QOM too:**
+when the token you pay is native QOM on QL1, the route that bridges QOM
+itself used to vanish from the quote entirely (the bridge pulls the
+WQOM form and the site did not wrap), so it was missing from the single
+routes, the benchmark, and the split pool. It is now quoted as a
+wrap-first direct route (the `leg1Wrap` flag on the route object;
+wrapping is exactly 1:1, so the quote needs no approximation), and the
+guided flow — single routes and split parts alike — runs the wrap as
+step 1, sending WQOM `deposit()` for exactly the part amount. The wrap
+tx hash is saved in the flow state, and on resume the step completes
+from chain evidence (receipt / WQOM balance delta) instead of wrapping
+twice. Labels show the step honestly in both languages ("QOM ->
+(wrap) WQOM -> bridge -> ..."). Measured 2026-11-14 with the site's own
+quoting: at 1T QOM -> ZAP the wrap-direct route is the best single
+(3,791.18 ZAP) and the split reaches 4,513.20 ZAP with the wrap route
+taking 72%; the pre-fix candidate set's best was 3,603.50 ZAP. At 10B
+QOM it honestly loses (55.61 vs 59.47 ZAP via qCAW). Regression:
+probe/wrapbridge.cjs.
+
 **New in v7.1 — per-part net quantities for cross-chain splits:** the
 v6.4 combined leg-2 quote is gone (user report, 2026-11-09: the quantity
 math was not premised on the split). Every part is now computed
@@ -579,6 +598,32 @@ node tools/bridge/sample_delivery.cjs  # 実送信の messageId → 届け先 ma
 ```
 
 ## 更新履歴
+
+- **v7.2（2026-11-14）**: QL1 の素の QOM を出すトークンに選んだとき、
+  QOM をそのままブリッジする直接経路が見積もりから消えていた問題を修正
+  （ユーザー指摘「wqomでのブリッジが書いてないけど、これが一番安いの？」）。
+  従来はブリッジが WQOM の形を引くのにサイトがラップ未対応だったため、
+  quoteCrossPlan が QOM ブリッジペア自体を無効化し、単一ルート・基準
+  （ベンチマーク）・分割候補の全部から外れていた。v7.2 では「ラップ必須の
+  直接ブリッジ」（候補オブジェクトの leg1Wrap フラグ）として見積もり対象に
+  入れ、単一・基準・分割プールのすべてに自然に流れるようにした。ラップは
+  1:1 の正確な等価変換なので、見積もり値は近似なしで amountIn そのまま。
+  実行側も対応: 案内フロー（単一・分割パート共通）のステップ1がラップ手順に
+  なり、WQOM の deposit() にパート分ちょうどを送る。送信 tx ハッシュを
+  フロー状態に保存し、再開時はレシート/WQOM 残高デルタというチェーンの
+  証拠で完了を確認してから進むため、二重に包むことはない。表示も両言語で
+  正直に: ルート表示は「QOM →（ラップ）WQOM → ブリッジ → …」、カードの
+  交換1行とステップ1は「ラップ」と明示する。実測（2026-11-14、サイト自身の
+  見積もりで）: 1T QOM → ZAP ではラップ直接が単一ベスト（3,791.18 ZAP、
+  42 側は QOM → FISH → ZAP）、分割は 4,513.20 ZAP でラップパートが 72%
+  （48%+24%）を占めた。修正前の候補集合の最良は 3,603.50 ZAP だったので、
+  このサイズでは指摘どおり直接経路が最良だった。一方 10B QOM ではラップ
+  直接 55.61 ZAP に対し qCAW 経由の単一ベスト 59.47 ZAP で、正直に負ける
+  （100B 以上で直接が単一ベストに逆転）。手数料ロジック・分割探索・他
+  トークンの経路・OSAK の 42→QL1 無効化は不変。回帰チェックとして
+  probe/wrapbridge.cjs を追加（ラップ経路の存在と順位、旧候補集合との比較、
+  WQOM 選択時の不変、実ルートオブジェクトからの deposit() calldata 照合、
+  フロー保存での leg1Wrap 往復保持をライブ確認）。
 
 - **v7.1（2026-11-09）**: クロスチェーン分割の数量計算をパート単位の
   正味モデルに統一（ユーザー指摘「クロスチェーンの場合、複数ルートへの
