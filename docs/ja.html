@@ -6,7 +6,7 @@
 <title>DEXアグリゲーター（42 Chain / QL1 / 42 Testnet）</title>
 <meta name="description" content="42 Chain（Infinite）と QL1 と 42テストネットで、直接・経由・分割の全部のルートを比べて、いちばん多く受け取れるプランで交換できるサイト。">
 <script>(function(){try{var t=localStorage.getItem('guppy-theme');document.documentElement.dataset.theme=(t==='dark'?'dark':'light');}catch(e){document.documentElement.dataset.theme='light';}})();</script>
-<link rel="stylesheet" href="style.css?v=2">
+<link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
 <header>
@@ -15,6 +15,8 @@
   <p class="sub">いちばん多く受け取れるルートを、全部のプールから探します。</p>
   <p class="sub small">「ルート」＝交換の通り道です。たとえば USDT → 42 を直接交換する道と、USDT → FISH → 42 のように経由する道があり、金額によって多い方が変わります。さらに、金額を複数のルートに分ける「分割」も含めて全部見積もりして並べます（1inchと同じ考え方）。</p>
 </header>
+<div id="maintenanceBanner" class="maintenance-banner" role="alert">メンテナンス中 — 見積もりと取引は利用できません。</div>
+
 <main class="layout">
 
 <div id="testnetBanner" class="testnet-banner" style="display:none">⚠ テストネット（TEST42）— 本物のお金ではありません</div>
@@ -189,6 +191,6 @@
   btn.addEventListener('click',function(){ var next=document.documentElement.dataset.theme==='dark'?'light':'dark'; document.documentElement.dataset.theme=next; try{localStorage.setItem('guppy-theme',next);}catch(e){} label(); });
 })();
 </script>
-<script src="app.js?v=11"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>

@@ -22,6 +22,12 @@
 const NATIVE_PH = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 const WQOM = "0xa26dfbf98dd1a32fae56a3d2b2d60a8a41b0bdf0";
 
+/* ---------- メンテナンスモード (2026-11-17〜) ----------
+   true のあいだは見積もり・接続・送信など取引系の入口をすべて止める。
+   再開するときはこの値を false に戻すだけでよい (バナーは各言語ページの
+   静的 HTML 側にもあるので、戻すときはそちらも外すこと)。 */
+const MAINTENANCE_MODE = true;
+
 /* ---------- i18n ---------- */
 const LANG = (typeof document !== "undefined" && document.documentElement && (document.documentElement.lang || "").toLowerCase().indexOf("en") === 0) ? "en" : "ja";
 const STR = {
@@ -1915,7 +1921,7 @@ function updateReceive() {
 }
 function updateMinLine() { updateReceive(); }
 async function onQuote() {
-  const c = chain(); const f = currentFrom(), tk = currentTo();
+  if (MAINTENANCE_MODE) return;  const c = chain(); const f = currentFrom(), tk = currentTo();
   if (!f || !tk) return;
   let amountIn;
   try { amountIn = parseAmount($("amountIn").value, f.decimals); } catch (e) { setStatus(e.message, true); return; }
@@ -1960,7 +1966,7 @@ async function ensureChain(chainObj) {
 }
 function shortAddr(a) { return a.slice(0, 6) + "…" + a.slice(-4); }
 async function onConnect() {
-  const e = eth();
+  if (MAINTENANCE_MODE) return;  const e = eth();
   if (!e) { setStatus(t("errNoMetaMask"), true); return; }
   try {
     const accts = await e.request({ method: "eth_requestAccounts" });
@@ -2044,7 +2050,7 @@ function renderAggArea() {
   if (cb) cb.addEventListener("click", () => { setStoredAggregator(c.key, null); renderAggArea(); renderRoutes(); });
 }
 async function onDeployAggregator() {
-  const c = chain();
+  if (MAINTENANCE_MODE) return;  const c = chain();
   const show = (msg, isErr) => { const st = $("aggStatus"); if (st) { st.textContent = msg; st.classList.toggle("err", !!isErr); } };
   if (!state.account) { show(t("aggNeedConnectFirst"), true); return; }
   try {
@@ -2069,7 +2075,7 @@ async function onDeployAggregator() {
   }
 }
 async function onSwap() {
-  const c = chain(); const f = currentFrom(), tk = currentTo();
+  if (MAINTENANCE_MODE) return;  const c = chain(); const f = currentFrom(), tk = currentTo();
   if (!state.account) { setStatus(t("statusNeedConnect"), true); return; }
   if (!state.lastQuote) { setStatus(t("statusNeedQuote"), true); return; }
   if (state.lastQuote.fromId !== f.id || state.lastQuote.toId !== tk.id) { setStatus(t("statusTokenChanged"), true); return; }
@@ -2167,7 +2173,7 @@ async function refreshXBalance() {
   } catch (e) { /* optional */ }
 }
 async function onXQuote() {
-  const src = CHAINS[state.xSrc], dst = CHAINS[xDstKey()];
+  if (MAINTENANCE_MODE) return;  const src = CHAINS[state.xSrc], dst = CHAINS[xDstKey()];
   const f = xFrom(), tk = xTo();
   if (!f || !tk) return;
   let amountIn;
@@ -2315,7 +2321,7 @@ function renderXCandidates() {
    paths are stored and executed exactly), or a bridge-token symbol string
    (v4 callers: the best full route for that intermediate is used). */
 async function startXFlow(routeOrSym, opts) {
-  if (!state.account) { setXStatus(t("xNeedConnect"), true); return; }
+  if (MAINTENANCE_MODE) return;  if (!state.account) { setXStatus(t("xNeedConnect"), true); return; }
   const cand = typeof routeOrSym === "string"
     ? state.xCandidates.find((c) => c.enabled && c.pair.sym === routeOrSym)
     : routeOrSym;
@@ -2501,7 +2507,7 @@ function renderXSplitFlow() {
   }
 }
 async function doXSplitStep1(idx) {
-  const f = state.xflow; if (!f || f.kind !== "split") return;
+  if (MAINTENANCE_MODE) return;  const f = state.xflow; if (!f || f.kind !== "split") return;
   const p = f.parts[idx]; if (!p || p.step !== 0) return;
   const src = CHAINS[f.srcKey];
   const fromTok = tokenById(f.srcKey, f.fromId);
@@ -2557,7 +2563,7 @@ async function doXSplitStep1(idx) {
   } catch (e) { setXStatus(t("xStepFail") + friendlyErr(e), true); }
 }
 async function doXSplitStep2(idx) {
-  const f = state.xflow; if (!f || f.kind !== "split") return;
+  if (MAINTENANCE_MODE) return;  const f = state.xflow; if (!f || f.kind !== "split") return;
   const p = f.parts[idx]; if (!p || p.step !== 1) return;
   const src = CHAINS[f.srcKey], dst = CHAINS[f.dstKey];
   const { tSrc, tDst, pair } = xSplitPartTokens(f, p);
@@ -2592,7 +2598,7 @@ async function doXSplitStep2(idx) {
   } catch (e) { setXStatus(t("xStepFail") + friendlyErr(e), true); }
 }
 async function checkSplitArrival(manual) {
-  const f = state.xflow; if (!f || f.kind !== "split") return false;
+  if (MAINTENANCE_MODE) return;  const f = state.xflow; if (!f || f.kind !== "split") return false;
   if (!f.parts.some((p) => p.step === 2)) return false;
   const dst = CHAINS[f.dstKey];
   try {
@@ -2617,7 +2623,7 @@ async function checkSplitArrival(manual) {
   return false;
 }
 async function doXSplitStep4(idx) {
-  const f = state.xflow; if (!f || f.kind !== "split") return;
+  if (MAINTENANCE_MODE) return;  const f = state.xflow; if (!f || f.kind !== "split") return;
   const p = f.parts[idx]; if (!p || p.step !== 3 || !p.leg2Path) return;
   const dst = CHAINS[f.dstKey];
   const toTok = tokenById(f.dstKey, f.toId);
@@ -2746,7 +2752,7 @@ async function fillStep4Quote() {
   } catch (e) { /* display only */ }
 }
 async function doXStep1() {
-  const f = state.xflow; if (!f || f.step !== 1) return;
+  if (MAINTENANCE_MODE) return;  const f = state.xflow; if (!f || f.step !== 1) return;
   const { fromTok, tSrc, src } = xFlowTokens();
   const btn = $("xStep1Btn"); if (btn) btn.disabled = true;
   try {
@@ -2800,7 +2806,7 @@ async function doXStep1() {
   } catch (e) { setXStatus(t("xStepFail") + friendlyErr(e), true); if (btn) btn.disabled = false; }
 }
 async function doXStep2() {
-  const f = state.xflow; if (!f || f.step !== 2) return;
+  if (MAINTENANCE_MODE) return;  const f = state.xflow; if (!f || f.step !== 2) return;
   const { tSrc, pair, src, dst } = xFlowTokens();
   const btn = $("xStep2Btn"); if (btn) btn.disabled = true;
   try {
@@ -2827,7 +2833,7 @@ async function doXStep2() {
   } catch (e) { setXStatus(t("xStepFail") + friendlyErr(e), true); if (btn) btn.disabled = false; }
 }
 async function checkArrival(manual) {
-  const f = state.xflow; if (!f || f.step !== 3) return false;
+  if (MAINTENANCE_MODE) return;  const f = state.xflow; if (!f || f.step !== 3) return false;
   const { tDst, dst } = xFlowTokens();
   try {
     const bal = await readTokenBalance(dst, tDst.address, state.account);
@@ -2847,7 +2853,7 @@ async function checkArrival(manual) {
 /* v4-era saved flows (no stored leg-2 path): hand off to the same-chain screen
    exactly as before. */
 function doXStep4Legacy() {
-  const f = state.xflow; if (!f || f.step !== 4) return;
+  if (MAINTENANCE_MODE) return;  const f = state.xflow; if (!f || f.step !== 4) return;
   const arrived = BigInt(f.arrived || f.bridgeOut);
   const tDst = tokenById(f.dstKey, f.tDstId);
   f.step = "done"; saveXFlow();
@@ -2866,7 +2872,7 @@ function doXStep4Legacy() {
    quote in the step before signing); if that exact path no longer quotes,
    stop with a clear error — never switch paths silently. */
 async function doXStep4() {
-  const f = state.xflow; if (!f || f.step !== 4) return;
+  if (MAINTENANCE_MODE) return;  const f = state.xflow; if (!f || f.step !== 4) return;
   if (!f.pathsV5) { doXStep4Legacy(); return; }
   const { tDst, toTok, dst } = xFlowTokens();
   if (!tDst || !toTok || !dst) return;
@@ -2897,7 +2903,7 @@ async function doXStep4() {
   } catch (e) { setXStatus(t("xStepFail") + friendlyErr(e), true); if (btn) btn.disabled = false; }
 }
 function onXAbandon() {
-  state.xflow = null; saveXFlow(); stopXPoll(); renderXFlow();
+  if (MAINTENANCE_MODE) return;  state.xflow = null; saveXFlow(); stopXPoll(); renderXFlow();
   setXStatus(t("xAbandoned"));
 }
 
@@ -2952,7 +2958,7 @@ function renderArbBoard() {
   }));
 }
 async function onArbScan() {
-  if (state.chainKey === "testnet") { setArbStatus(LANG === "en" ? "The price-gap board is mainnet-only (no QL1 testnet bridge is known)." : "価格差ボードは本番チェーン同士だけです（QL1のテストネットブリッジは確認できていません）。", true); return; }
+  if (MAINTENANCE_MODE) return;  if (state.chainKey === "testnet") { setArbStatus(LANG === "en" ? "The price-gap board is mainnet-only (no QL1 testnet bridge is known)." : "価格差ボードは本番チェーン同士だけです（QL1のテストネットブリッジは確認できていません）。", true); return; }
   let startRaw;
   try {
     startRaw = parseAmount($("arbAmount").value, 18);
@@ -2971,7 +2977,7 @@ async function onArbScan() {
   finally { if (btn) btn.disabled = false; }
 }
 async function startArbFlow(row, kind) {
-  if (!row || !row.ok) return;
+  if (MAINTENANCE_MODE) return;  if (!row || !row.ok) return;
   const isRt = kind === "rt";
   if (state.chainKey === "testnet") setChain("infinite");
   setMode("cross");
@@ -2987,7 +2993,7 @@ async function startArbFlow(row, kind) {
   if (isRt) setXStatus(t("arbRtNote"));
 }
 async function startReturnFlow() {
-  const f = state.xflow; if (!f || !f.arbReturn) return;
+  if (MAINTENANCE_MODE) return;  const f = state.xflow; if (!f || !f.arbReturn) return;
   const srcKey = f.dstKey, dstKey = f.srcKey;
   setMode("cross");
   setXSrc(srcKey);
@@ -3002,7 +3008,7 @@ async function startReturnFlow() {
 
 /* ---------- CA add ---------- */
 async function onCaAdd() {
-  const input = $("caInput"), msg = $("caMsg");
+  if (MAINTENANCE_MODE) return;  const input = $("caInput"), msg = $("caMsg");
   const m = input.value.trim().match(/0x[0-9a-fA-F]{40}/);
   if (!m) { msg.textContent = t("caBadFormat"); return; }
   const addr = m[0].toLowerCase();
@@ -3074,6 +3080,29 @@ function initLangSelector() {
     if (target && typeof location !== "undefined" && location) location.href = target;
   });
 }
+/* メンテナンス中: 言語セレクタと言語切替・テーマ切替以外の操作部品を
+   すべて disabled にする。復元されたクロスフローのボタンなど、初期化後に
+   描画される部品も MutationObserver で追随して無効化する。各ハンドラ側でも
+   MAINTENANCE_MODE を見て即 return するので、finally 等で disabled=false に
+   戻されても送信系は動かない。 */
+function applyMaintenanceMode() {
+  if (!MAINTENANCE_MODE) return;
+  if (typeof document === "undefined" || !document.querySelectorAll) return;
+  const keep = { langSel: true, themeToggle: true };
+  const disableAll = () => {
+    document.querySelectorAll("button, input, select, textarea").forEach((el) => {
+      if (keep[el.id]) return;
+      el.disabled = true;
+      el.setAttribute("aria-disabled", "true");
+    });
+  };
+  disableAll();
+  if (document.body && document.body.classList) document.body.classList.add("maintenance");
+  if (typeof MutationObserver !== "undefined" && document.body) {
+    const obs = new MutationObserver(() => disableAll());
+    obs.observe(document.body, { childList: true, subtree: true });
+  }
+}
 function initApp() {
   initLangSelector();
   loadLocal();
@@ -3117,12 +3146,13 @@ function initApp() {
   loadXFlow();
   setChain("infinite");
   renderBalances();
+  applyMaintenanceMode();
 }
 if (typeof document !== "undefined" && document.getElementById && document.getElementById("fromToken")) {
   try { initApp(); } catch (e) { /* harness stubs may lack full DOM */ }
 }
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { CHAINS, STR, LANG, state, parseAmount, formatAmount, formatRate, formatGas, encAddr, encUint, encLegsTail, encodeGetAmountsOut, decodeAmountsOut, buildCandidatePaths, fetchQuotesForTokens, evaluateSplits, buildSwapTx, buildApproveTx, buildWrapTx, decodeWrapTxData, wrapLanded, buildSplitTx, applySlippageBps, fetchTokenMeta, tokenById, allTokens, symbolFor, onQuote, onCaAdd, selectRoute, selectSplit, selectedRoute, setChain, estimateGasUnitsSingle, estimateGasUnitsSplit, splitExecutable,
+  module.exports = { MAINTENANCE_MODE, applyMaintenanceMode, CHAINS, STR, LANG, state, parseAmount, formatAmount, formatRate, formatGas, encAddr, encUint, encLegsTail, encodeGetAmountsOut, decodeAmountsOut, buildCandidatePaths, fetchQuotesForTokens, evaluateSplits, buildSwapTx, buildApproveTx, buildWrapTx, decodeWrapTxData, wrapLanded, buildSplitTx, applySlippageBps, fetchTokenMeta, tokenById, allTokens, symbolFor, onQuote, onCaAdd, selectRoute, selectSplit, selectedRoute, setChain, estimateGasUnitsSingle, estimateGasUnitsSplit, splitExecutable,
     BRIDGE_PAIRS, BRIDGE_MAILBOX, bridgePairBySym, fetchBestRoute, fetchRoutesOnly, attachImpactsMulti, buildBridgeTx, decodeBridgeTxData, encodeRecipient32, fetchBridgeNativeQuote, fetchBridgeDelivered, readTokenBalance, extractMessageId, quoteCrossPlan, requotePathExact, serializeXFlow, restoreXFlow, saveXFlow, loadXFlow, setMode, setXSrc, xDstKey, onXQuote, renderXCandidates, startXFlow, renderXFlow, checkArrival, doXStep1, doXStep4, doXStep4Legacy, onXAbandon,
     evaluateCrossSplit, crossSplitPool, requoteSplitPart, bridgeFeeInSrcToken, makeCrossSplitQuoter, refineSplitAllocation, leg2GroupKey, combineLeg2Groups, distributeCombinedOut, attributeSplitArrivals, crossSplitPhase, startXSplitFlow, renderXSplitFlow, checkSplitArrival, doXSplitStep1, doXSplitStep2, doXSplitStep4,
     qomTokenId, fetchBridgeFeeInQom, quoteArbRoute, quoteArbBoard, renderArbBoard, onArbScan, startArbFlow, startReturnFlow,
