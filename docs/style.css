@@ -149,9 +149,10 @@ footer { max-width: 640px; margin: 0 auto; padding: 4px 16px 30px; color: var(--
 .agg-btn { margin-top: 8px; padding: 8px 14px; border-radius: 12px; border: 1px solid var(--agg-line); background: var(--chip); color: var(--text); cursor: pointer; font-size: .9rem; min-height: 44px; }
 .agg-btn:hover { filter: brightness(1.05); }
 
-/* Responsive layout: the product stays in one centred column at every
-   width. The swap flow is intentionally not split into the old desktop
-   two-column form; results unfold below the form in the same card. */
+/* Responsive layout: on phones the product stays in one centred column;
+   the swap flow is intentionally not split into a two-column form and
+   results unfold below the form in the same card. Tablet and desktop
+   breakpoints are at the end of this file. */
 @media (min-width: 641px) {
   header { padding-top: 24px; }
   .panel { padding: 22px; }
@@ -189,3 +190,50 @@ body.maintenance .panel { opacity: .94; }
 .swap-panel > .connect-cta { margin-top: 18px; }
 .swap-panel > #quoteBtn { margin-top: 10px; }
 .account-row { margin-top: 12px; }
+
+/* ---- Responsive optimisation (2026-11-18) ----
+   Phone (<768px) keeps the redesign's single big-card column untouched.
+   Tablet widens the column slightly and scales gently. Desktop keeps the
+   operation flow (chain/mode + connect panel and the swap card) in one
+   centred ≤640px column, and lays the secondary panels out in a
+   2-column grid inside a ≤1120px container, with an explicit
+   grid-column for every direct child of .layout. */
+
+/* Tablet / intermediate widths: 768–1023px */
+@media (min-width: 768px) and (max-width: 1023px) {
+  header { max-width: 680px; padding: 22px 20px 2px; }
+  .layout { max-width: 680px; padding: 0 20px; }
+  footer { max-width: 680px; padding-left: 20px; padding-right: 20px; }
+  .maintenance-banner { max-width: 680px; }
+  .top-actions { flex-wrap: nowrap; }
+  h1 { font-size: 28px; }
+  .sub { font-size: 14.5px; }
+  .panel { padding: 24px; }
+  .swap-panel { padding: 26px; }
+}
+
+/* Desktop: 1024px and up */
+@media (min-width: 1024px) {
+  body { font-size: 17px; }
+  header { max-width: 1120px; padding: 28px 24px 4px; }
+  h1 { font-size: 31px; }
+  .sub { font-size: 15px; max-width: 700px; }
+  .sub.small { font-size: 13px; }
+  footer { max-width: 1120px; padding: 6px 24px 36px; font-size: 12.5px; }
+  .layout { max-width: 1120px; padding: 0 24px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
+  .layout > .panel { margin: 0; padding: 26px; }
+  .panel h2 { font-size: 20px; }
+  .layout > .testnet-banner { grid-column: 1 / -1; justify-self: center; width: 100%; max-width: 640px; margin: 14px 0 0; }
+  /* Operation flow: the chain/mode + connect-status panel sits with the
+     swap card in the same centred column, so the flow reads as one. */
+  .layout > section.panel:first-of-type { grid-column: 1 / -1; justify-self: center; width: 100%; max-width: 640px; }
+  #swapPanel { grid-column: 1 / -1; justify-self: center; width: 100%; max-width: 640px; padding: 28px; }
+  /* The cross-chain flow is long and complex: explicit full-width span. */
+  #crossPanel { grid-column: 1 / -1; }
+  /* Secondary panels, explicitly placed: arbitrage left, CA add right
+     (top-aligned beside it), and the how-it-works/notes panel as a
+     full-width documentation band below them. */
+  #arbPanel { grid-column: 1; }
+  #caPanel { grid-column: 2; }
+  .layout > section.panel:last-of-type { grid-column: 1 / -1; }
+}
