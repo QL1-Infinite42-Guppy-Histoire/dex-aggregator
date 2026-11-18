@@ -6,11 +6,14 @@
 <title>DEX Aggregator (42 Chain / QL1 / 42 Testnet)</title>
 <meta name="description" content="Compare direct, multi-hop and split routes across all pools on 42 Chain (Infinite), QL1 and the 42 testnet, and swap along the plan that gives you the most.">
 <script>(function(){try{var t=localStorage.getItem('guppy-theme');document.documentElement.dataset.theme=(t==='dark'?'dark':'light');}catch(e){document.documentElement.dataset.theme='light';}})();</script>
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
 <header>
-  <div class="top-actions"><div class="lang-switch"><label>Language / 言語 <select id="langSel"><option value="en" selected>English</option><option value="ja">日本語</option></select></label></div><button id="themeToggle" type="button" class="theme-toggle" aria-label="Toggle background theme">🌙 Dark</button></div>
+  <div class="top-actions"><div class="lang-switch"><label>Language / 言語 <select id="langSel"><option value="en" selected>English</option><option value="ja">日本語</option></select></label></div><button id="connectBtn" type="button" class="header-connect">Connect wallet (MetaMask)</button><button id="themeToggle" type="button" class="theme-toggle" aria-label="Toggle background theme">🌙 Dark</button></div>
   <h1>DEX Aggregator (42 Chain / QL1 / Testnet)</h1>
   <p class="sub">Finds the route that gives you the most, across every pool.</p>
   <p class="sub small">A "route" is the path a swap takes. For example, USDT → 42 can go directly, or via another token like USDT → FISH → 42, and which one gives more depends on the amount. This site quotes every path — including "splits" that divide your amount across several routes — and ranks them, the same idea as 1inch.</p>
@@ -34,8 +37,7 @@
     <button id="modeCross" type="button" class="chain-btn">Cross-chain</button>
   </div>
   <p id="modeNote" class="count">Cross-chain is between QL1 and 42 Chain (not available on the testnet).</p>
-  <div class="connect-row">
-    <button id="connectBtn" type="button">Connect wallet (MetaMask)</button>
+  <div class="connect-row account-row">
     <span id="accountLine" class="count">Not connected (quotes work without a wallet)</span>
   </div>
   <p id="status" class="status"></p>
@@ -47,7 +49,7 @@
   <div class="pay-box">
     <div class="pay-label">You pay</div>
     <div class="pay-row">
-      <select id="fromToken" aria-label="Token you pay"></select>
+      <div class="token-select-wrap"><span id="fromTokenBadge" class="token-badge" aria-hidden="true">USDT</span><select id="fromToken" aria-label="Token you pay"></select></div>
       <input id="amountIn" type="text" inputmode="decimal" autocomplete="off" placeholder="0.0" aria-label="Amount">
     </div>
     <p id="fromBalance" class="count"></p>
@@ -65,7 +67,7 @@
   <div class="pay-box receive">
     <div class="pay-label">You receive (estimated)</div>
     <div class="pay-row">
-      <select id="toToken" aria-label="Token you receive"></select>
+      <div class="token-select-wrap"><span id="toTokenBadge" class="token-badge" aria-hidden="true">42</span><select id="toToken" aria-label="Token you receive"></select></div>
       <div id="receiveOut" class="receive-out">0.0</div>
     </div>
     <p id="toBalance" class="count"></p>
@@ -84,6 +86,7 @@
     </div>
   </div>
 
+  <button id="connectBtnMain" type="button" class="big connect-cta">Connect wallet</button>
   <button id="quoteBtn" type="button" class="big">Compare routes</button>
   <div id="planArea"></div>
   <div id="routeList" class="route-list"></div>
@@ -107,14 +110,14 @@
     </div>
   </div>
   <label class="fld">Token you pay (on the source chain)
-    <select id="xFromToken" aria-label="Token you pay (cross-chain)"></select>
+    <span class="token-select-wrap token-select-wrap--field"><span id="xFromTokenBadge" class="token-badge" aria-hidden="true">QSWAP</span><select id="xFromToken" aria-label="Token you pay (cross-chain)"></select></span>
   </label>
   <p id="xFromBalance" class="count"></p>
   <label class="fld">Amount
     <input id="xAmount" type="text" inputmode="decimal" autocomplete="off" placeholder="0.0" aria-label="Amount (cross-chain)">
   </label>
   <label class="fld">Token you receive (on the destination chain)
-    <select id="xToToken" aria-label="Token you receive (cross-chain)"></select>
+    <span class="token-select-wrap token-select-wrap--field"><span id="xToTokenBadge" class="token-badge" aria-hidden="true">FISH</span><select id="xToToken" aria-label="Token you receive (cross-chain)"></select></span>
   </label>
   <button id="xQuoteBtn" type="button" class="big">Compare cross-chain</button>
   <p id="xStatus" class="status"></p>
@@ -191,6 +194,6 @@
   btn.addEventListener('click',function(){ var next=document.documentElement.dataset.theme==='dark'?'light':'dark'; document.documentElement.dataset.theme=next; try{localStorage.setItem('guppy-theme',next);}catch(e){} label(); });
 })();
 </script>
-<script src="app.js?v=12"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

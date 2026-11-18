@@ -6,11 +6,14 @@
 <title>DEXアグリゲーター（42 Chain / QL1 / 42 Testnet）</title>
 <meta name="description" content="42 Chain（Infinite）と QL1 と 42テストネットで、直接・経由・分割の全部のルートを比べて、いちばん多く受け取れるプランで交換できるサイト。">
 <script>(function(){try{var t=localStorage.getItem('guppy-theme');document.documentElement.dataset.theme=(t==='dark'?'dark':'light');}catch(e){document.documentElement.dataset.theme='light';}})();</script>
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
 <header>
-  <div class="top-actions"><div class="lang-switch"><label>言語 / Language <select id="langSel"><option value="en">English</option><option value="ja" selected>日本語</option></select></label></div><button id="themeToggle" type="button" class="theme-toggle" aria-label="背景テーマ切替">🌙 黒背景</button></div>
+  <div class="top-actions"><div class="lang-switch"><label>言語 / Language <select id="langSel"><option value="en">English</option><option value="ja" selected>日本語</option></select></label></div><button id="connectBtn" type="button" class="header-connect">ウォレットを接続（MetaMask）</button><button id="themeToggle" type="button" class="theme-toggle" aria-label="背景テーマ切替">🌙 黒背景</button></div>
   <h1>DEXアグリゲーター（42 Chain / QL1 / Testnet）</h1>
   <p class="sub">いちばん多く受け取れるルートを、全部のプールから探します。</p>
   <p class="sub small">「ルート」＝交換の通り道です。たとえば USDT → 42 を直接交換する道と、USDT → FISH → 42 のように経由する道があり、金額によって多い方が変わります。さらに、金額を複数のルートに分ける「分割」も含めて全部見積もりして並べます（1inchと同じ考え方）。</p>
@@ -34,8 +37,7 @@
     <button id="modeCross" type="button" class="chain-btn">クロスチェーン</button>
   </div>
   <p id="modeNote" class="count">クロスチェーンは QL1 ⇔ 42 Chain の間です（テストネットでは使えません）。</p>
-  <div class="connect-row">
-    <button id="connectBtn" type="button">ウォレットを接続（MetaMask）</button>
+  <div class="connect-row account-row">
     <span id="accountLine" class="count">未接続（見積もりだけなら接続なしで使えます）</span>
   </div>
   <p id="status" class="status"></p>
@@ -47,7 +49,7 @@
   <div class="pay-box">
     <div class="pay-label">出す（You pay）</div>
     <div class="pay-row">
-      <select id="fromToken" aria-label="出すトークン"></select>
+      <div class="token-select-wrap"><span id="fromTokenBadge" class="token-badge" aria-hidden="true">USDT</span><select id="fromToken" aria-label="出すトークン"></select></div>
       <input id="amountIn" type="text" inputmode="decimal" autocomplete="off" placeholder="0.0" aria-label="金額">
     </div>
     <p id="fromBalance" class="count"></p>
@@ -65,7 +67,7 @@
   <div class="pay-box receive">
     <div class="pay-label">受け取る（You receive・見積もり）</div>
     <div class="pay-row">
-      <select id="toToken" aria-label="受け取るトークン"></select>
+      <div class="token-select-wrap"><span id="toTokenBadge" class="token-badge" aria-hidden="true">42</span><select id="toToken" aria-label="受け取るトークン"></select></div>
       <div id="receiveOut" class="receive-out">0.0</div>
     </div>
     <p id="toBalance" class="count"></p>
@@ -84,6 +86,7 @@
     </div>
   </div>
 
+  <button id="connectBtnMain" type="button" class="big connect-cta">ウォレットを接続</button>
   <button id="quoteBtn" type="button" class="big">ルートを比べる</button>
   <div id="planArea"></div>
   <div id="routeList" class="route-list"></div>
@@ -107,14 +110,14 @@
     </div>
   </div>
   <label class="fld">出すトークン（送る元チェーンのもの）
-    <select id="xFromToken" aria-label="出すトークン（クロスチェーン）"></select>
+    <span class="token-select-wrap token-select-wrap--field"><span id="xFromTokenBadge" class="token-badge" aria-hidden="true">QSWAP</span><select id="xFromToken" aria-label="出すトークン（クロスチェーン）"></select></span>
   </label>
   <p id="xFromBalance" class="count"></p>
   <label class="fld">金額
     <input id="xAmount" type="text" inputmode="decimal" autocomplete="off" placeholder="0.0" aria-label="金額（クロスチェーン）">
   </label>
   <label class="fld">受け取るトークン（届くチェーンのもの）
-    <select id="xToToken" aria-label="受け取るトークン（クロスチェーン）"></select>
+    <span class="token-select-wrap token-select-wrap--field"><span id="xToTokenBadge" class="token-badge" aria-hidden="true">FISH</span><select id="xToToken" aria-label="受け取るトークン（クロスチェーン）"></select></span>
   </label>
   <button id="xQuoteBtn" type="button" class="big">クロスチェーンで比べる</button>
   <p id="xStatus" class="status"></p>
@@ -191,6 +194,6 @@
   btn.addEventListener('click',function(){ var next=document.documentElement.dataset.theme==='dark'?'light':'dark'; document.documentElement.dataset.theme=next; try{localStorage.setItem('guppy-theme',next);}catch(e){} label(); });
 })();
 </script>
-<script src="app.js?v=12"></script>
+<script src="app.js?v=13"></script>
 </body>
 </html>

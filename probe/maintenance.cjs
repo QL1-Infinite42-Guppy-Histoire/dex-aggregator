@@ -8,7 +8,7 @@ const fs = require("fs");
 const vm = require("vm");
 const assert = require("assert");
 
-const IDS = ["chainInf", "chainQl1", "chainTest", "testnetBanner", "chainNote", "connectBtn", "accountLine", "status", "fromToken", "toToken", "fromBalance", "toBalance", "amountIn", "flipBtn", "quoteBtn", "planArea", "routeList", "splitNote", "rateLine", "rateInvertBtn", "gasLine", "receiveOut", "minLine", "swapBtn", "txResult", "slipCustom", "caInput", "caAddBtn", "caMsg", "modeSame", "modeCross", "modeNote", "swapPanel", "caPanel", "crossPanel", "xSrcInf", "xSrcQl1", "xDstLabel", "xFromToken", "xToToken", "xFromBalance", "xAmount", "xQuoteBtn", "xStatus", "xCandidates", "xFlow", "xAbandon", "arbPanel", "arbAmount", "arbScanBtn", "arbStatus", "arbBoard", "arbTestnetNote", "langSel", "aggArea", "themeToggle"];
+const IDS = ["chainInf", "chainQl1", "chainTest", "testnetBanner", "chainNote", "connectBtn", "connectBtnMain", "fromTokenBadge", "toTokenBadge", "xFromTokenBadge", "xToTokenBadge", "accountLine", "status", "fromToken", "toToken", "fromBalance", "toBalance", "amountIn", "flipBtn", "quoteBtn", "planArea", "routeList", "splitNote", "rateLine", "rateInvertBtn", "gasLine", "receiveOut", "minLine", "swapBtn", "txResult", "slipCustom", "caInput", "caAddBtn", "caMsg", "modeSame", "modeCross", "modeNote", "swapPanel", "caPanel", "crossPanel", "xSrcInf", "xSrcQl1", "xDstLabel", "xFromToken", "xToToken", "xFromBalance", "xAmount", "xQuoteBtn", "xStatus", "xCandidates", "xFlow", "xAbandon", "arbPanel", "arbAmount", "arbScanBtn", "arbStatus", "arbBoard", "arbTestnetNote", "langSel", "aggArea", "themeToggle"];
 
 function loadPage(lang) {
   function makeEl(id) {
@@ -58,16 +58,24 @@ function loadPage(lang) {
   const ja = fs.readFileSync(__dirname + "/../docs/ja.html", "utf8");
   assert.ok(en.includes("Under maintenance — quotes and trading are unavailable."), "EN banner text");
   assert.ok(ja.includes("メンテナンス中 — 見積もりと取引は利用できません。"), "JA banner text");
-  console.log("static: flag + EN/JA banners OK");
+  for (const [name, html, cta] of [["EN", en, "Connect wallet"], ["JA", ja, "ウォレットを接続"]]) {
+    assert.strictEqual((html.match(/id="connectBtn"/g) || []).length, 1, name + ": one header connect button");
+    assert.strictEqual((html.match(/id="connectBtnMain"/g) || []).length, 1, name + ": one main-area connect button");
+    assert.ok(html.includes('id="connectBtnMain" type="button" class="big connect-cta">' + cta + "</button>"), name + ": main connect CTA label");
+    assert.ok(html.indexOf('id="connectBtn"') < html.indexOf('id="themeToggle"'), name + ": header connect sits in the top actions row");
+  }
+  console.log("static: flag + EN/JA banners + both connect buttons OK");
 
   for (const lang of ["en", "ja"]) {
     const { app, els } = loadPage(lang);
     assert.strictEqual(app.MAINTENANCE_MODE, true, lang + ": exported flag is true");
 
     /* initApp の最後で applyMaintenanceMode が走り、部品が無効化されている */
-    const mustBeDisabled = ["connectBtn", "quoteBtn", "swapBtn", "fromToken", "toToken", "amountIn", "slipCustom", "caInput", "caAddBtn", "xQuoteBtn", "xAmount", "xFromToken", "xToToken", "arbScanBtn", "arbAmount", "chainInf", "chainQl1", "modeSame", "modeCross", "xAbandon", "flipBtn"];
+    const mustBeDisabled = ["connectBtn", "connectBtnMain", "quoteBtn", "swapBtn", "fromToken", "toToken", "amountIn", "slipCustom", "caInput", "caAddBtn", "xQuoteBtn", "xAmount", "xFromToken", "xToToken", "arbScanBtn", "arbAmount", "chainInf", "chainQl1", "modeSame", "modeCross", "xAbandon", "flipBtn"];
     for (const id of mustBeDisabled) assert.strictEqual(els[id].disabled, true, lang + ": " + id + " disabled after init");
     assert.strictEqual(els.langSel.disabled, false, lang + ": langSel stays enabled");
+    assert.strictEqual(els.fromTokenBadge.textContent, "USDT", lang + ": pay token badge syncs from the selected token");
+    assert.strictEqual(els.toTokenBadge.textContent, "42", lang + ": receive token badge syncs from the selected token");
     console.log(lang + ": controls disabled after init, langSel enabled");
 
     /* 入口が no-op であること */

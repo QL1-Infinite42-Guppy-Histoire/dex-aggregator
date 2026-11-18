@@ -1783,9 +1783,35 @@ function fillTokenSelects() {
     $("fromToken").value = c.defaultFrom;
     if ($("fromToken").value === $("toToken").value) $("toToken").value = c.defaultTo;
   }
+  syncTokenBadges();
 }
 function currentFrom() { return tokenById(state.chainKey, $("fromToken").value); }
 function currentTo() { return tokenById(state.chainKey, $("toToken").value); }
+/* Display-only token badges beside the pill selectors. The badge is derived
+   from the selected option/token and never feeds quote or execution logic. */
+function syncTokenBadge(selectId, badgeId) {
+  const sel = $(selectId), badge = $(badgeId);
+  if (!sel || !badge) return;
+  let symbol = "";
+  try {
+    const opt = sel.options && typeof sel.selectedIndex === "number" && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex] : null;
+    if (opt) symbol = String(opt.textContent || "").split(" — ")[0].trim();
+  } catch (e) { /* fall back to token metadata below */ }
+  if (!symbol && sel.value) {
+    const key = selectId === "xFromToken" ? state.xSrc : selectId === "xToToken" ? xDstKey() : state.chainKey;
+    const tok = tokenById(key, sel.value);
+    if (tok) symbol = tok.symbol || "";
+  }
+  if (!symbol) return;
+  badge.textContent = symbol.slice(0, 6).toUpperCase();
+  badge.dataset.len = String(Math.min(symbol.length, 6));
+}
+function syncTokenBadges() {
+  syncTokenBadge("fromToken", "fromTokenBadge");
+  syncTokenBadge("toToken", "toTokenBadge");
+  syncTokenBadge("xFromToken", "xFromTokenBadge");
+  syncTokenBadge("xToToken", "xToTokenBadge");
+}
 function clearRoutes(msg) {
   state.routes = []; state.directOut = null; state.splitEstimate = null; state.splitEval = null; state.gasPrice = null;
   state.selectedIdx = 0; state.selectedPlan = { type: "single", idx: 0 }; state.lastQuote = null;
@@ -2159,6 +2185,7 @@ function fillXSelects() {
   mk($("xToToken"), allTokens(xDstKey()), xDstKey() === "infinite" ? "fish" : "qswap");
   if (!$("xFromToken").value) $("xFromToken").value = allTokens(state.xSrc)[0].id;
   if (!$("xToToken").value) $("xToToken").value = allTokens(xDstKey())[0].id;
+  syncTokenBadges();
 }
 function xFrom() { return tokenById(state.xSrc, $("xFromToken").value); }
 function xTo() { return tokenById(xDstKey(), $("xToToken").value); }
@@ -3111,14 +3138,16 @@ function initApp() {
   $("chainQl1").addEventListener("click", () => setChain("ql1"));
   if ($("chainTest")) $("chainTest").addEventListener("click", () => setChain("testnet"));
   $("connectBtn").addEventListener("click", onConnect);
+  if ($("connectBtnMain")) $("connectBtnMain").addEventListener("click", () => { const b = $("connectBtn"); if (b && b.click) b.click(); });
   $("quoteBtn").addEventListener("click", onQuote);
   $("swapBtn").addEventListener("click", onSwap);
   $("flipBtn").addEventListener("click", () => {
     const a = $("fromToken").value; $("fromToken").value = $("toToken").value; $("toToken").value = a;
+    syncTokenBadges();
     clearRoutes(t("statusSwappedPair")); refreshBalances();
   });
   if ($("rateInvertBtn")) $("rateInvertBtn").addEventListener("click", () => { state.rateInvert = !state.rateInvert; updateReceive(); });
-  for (const id of ["fromToken", "toToken"]) $(id).addEventListener("change", () => { clearRoutes(t("statusTokenChangedMsg")); refreshBalances(); });
+  for (const id of ["fromToken", "toToken"]) $(id).addEventListener("change", () => { syncTokenBadges(); clearRoutes(t("statusTokenChangedMsg")); refreshBalances(); });
   $("amountIn").addEventListener("input", () => { if (state.routes.length) clearRoutes(t("statusAmountChanged")); });
   document.querySelectorAll(".chip").forEach((el) => el.addEventListener("click", () => applyChip(el.dataset.pct === "MAX" ? "MAX" : Number(el.dataset.pct))));
   document.querySelectorAll(".slip-btn").forEach((el) => el.addEventListener("click", () => {
@@ -3142,7 +3171,7 @@ function initApp() {
   if ($("arbScanBtn")) $("arbScanBtn").addEventListener("click", onArbScan);
   document.querySelectorAll(".arb-chip").forEach((el) => el.addEventListener("click", () => { if ($("arbAmount")) $("arbAmount").value = el.dataset.amt; }));
   if ($("xAbandon")) $("xAbandon").addEventListener("click", onXAbandon);
-  for (const id of ["xFromToken", "xToToken"]) if ($(id)) $(id).addEventListener("change", () => { state.xCandidates = []; state.xQuote = null; state.xSplit = null; state.xSplitNet = null; if ($("xCandidates")) $("xCandidates").innerHTML = ""; refreshXBalance(); });
+  for (const id of ["xFromToken", "xToToken"]) if ($(id)) $(id).addEventListener("change", () => { syncTokenBadges(); state.xCandidates = []; state.xQuote = null; state.xSplit = null; state.xSplitNet = null; if ($("xCandidates")) $("xCandidates").innerHTML = ""; refreshXBalance(); });
   loadXFlow();
   setChain("infinite");
   renderBalances();
@@ -3157,5 +3186,5 @@ if (typeof module !== "undefined" && module.exports) {
     evaluateCrossSplit, crossSplitPool, requoteSplitPart, bridgeFeeInSrcToken, makeCrossSplitQuoter, refineSplitAllocation, leg2GroupKey, combineLeg2Groups, distributeCombinedOut, attributeSplitArrivals, crossSplitPhase, startXSplitFlow, renderXSplitFlow, checkSplitArrival, doXSplitStep1, doXSplitStep2, doXSplitStep4,
     qomTokenId, fetchBridgeFeeInQom, quoteArbRoute, quoteArbBoard, renderArbBoard, onArbScan, startArbFlow, startReturnFlow,
     evaluateCrossSplitNet, buildDeployTx, decodeSplitTxData, SPLIT_BYTECODE, storedAggregator, setStoredAggregator, effectiveAggregator, aggregatorSource, renderAggArea, onDeployAggregator,
-    langTargetFor, initLangSelector };
+    langTargetFor, initLangSelector, syncTokenBadges };
 }
