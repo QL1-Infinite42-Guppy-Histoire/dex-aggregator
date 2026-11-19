@@ -1,11 +1,14 @@
 "use strict";
-/* 再開状態チェック (2026-11-19 差し替え。旧: メンテナンス停止状態の検証)
-   2026-11-19 のユーザー指示でアグリゲーターは「使用可能だがメンテナンス中
-   (不具合の可能性あり)」として再開した。このプローブはその状態を検証する:
+/* メンテナンス終了後の状態チェック (2026-11-19 差し替え。旧: 停止状態→
+   再開状態の検証を経て、この最終形になった)
+   2026-11-19 のユーザー指示「アグリゲーター、メンテナンスおわり」で
+   メンテナンスは完全に終了した。このプローブはその最終状態を検証する:
    (1) MAINTENANCE_MODE = false で、停止機構 (全ハンドラのガードと
-       applyMaintenanceMode) はコードに残っていること、
-   (2) 両言語ページのバナーが新しい注意書きで、旧「利用できません」文面が
-       残っていないこと — フラグだけ戻したりバナーだけ戻したりすると落ちる、
+       applyMaintenanceMode) はコードに残っていること (将来の再停止に備え
+       残置する。フラグが true に戻ると落ちる)、
+   (2) 両言語ページにメンテナンスのバナーも文言も一切残っていないこと
+       (再開時の注意書きも、旧「利用できません」文面も無いこと — バナーが
+       復活したり文言が戻ったりすると落ちる)、
    (3) 初期化後に操作部品が disabled になっていないこと、
    (4) 入口ハンドラが no-op ではなく実際に動くこと (不正な金額/アドレスに
        対して検証エラーを返すところまで。送信・見積もりの実通信はしない —
@@ -16,7 +19,7 @@ const assert = require("assert");
 
 const IDS = ["chainInf", "chainQl1", "chainTest", "testnetBanner", "chainNote", "connectBtn", "connectBtnMain", "fromTokenBadge", "toTokenBadge", "xFromTokenBadge", "xToTokenBadge", "accountLine", "status", "fromToken", "toToken", "fromBalance", "toBalance", "amountIn", "flipBtn", "quoteBtn", "planArea", "routeList", "splitNote", "rateLine", "rateInvertBtn", "gasLine", "receiveOut", "minLine", "swapBtn", "txResult", "slipCustom", "caInput", "caAddBtn", "caMsg", "modeSame", "modeCross", "modeNote", "swapPanel", "caPanel", "crossPanel", "xSrcInf", "xSrcQl1", "xDstLabel", "xFromToken", "xToToken", "xFromBalance", "xAmount", "xQuoteBtn", "xStatus", "xCandidates", "xFlow", "xAbandon", "arbPanel", "arbAmount", "arbScanBtn", "arbStatus", "arbBoard", "arbTestnetNote", "langSel", "aggArea", "themeToggle"];
 
-const NEW_BANNER = {
+const CAUTION_BANNER = {
   en: "Usable, but still under maintenance — bugs may occur.",
   ja: "使用可能ですが、メンテナンス中ですので不具合の可能性があります",
 };
@@ -62,8 +65,8 @@ function loadPage(lang) {
 (async () => {
   /* ---- static checks: flag is OFF, mechanism retained, banners match ---- */
   const appSrc = fs.readFileSync(__dirname + "/../docs/app.js", "utf8");
-  assert.ok(/const MAINTENANCE_MODE = false;/.test(appSrc), "MAINTENANCE_MODE = false present (reopened 2026-11-19)");
-  assert.ok(!/const MAINTENANCE_MODE = true;/.test(appSrc), "flag must not be true in the reopened state");
+  assert.ok(/const MAINTENANCE_MODE = false;/.test(appSrc), "MAINTENANCE_MODE = false present (maintenance ended 2026-11-19)");
+  assert.ok(!/const MAINTENANCE_MODE = true;/.test(appSrc), "flag must not be true in the post-maintenance state");
   assert.ok(/function applyMaintenanceMode\(\) \{\n  if \(!MAINTENANCE_MODE\) return;/.test(appSrc), "applyMaintenanceMode still keys off the flag (mechanism retained)");
   const gated = ["onQuote", "onConnect", "onDeployAggregator", "onSwap", "onXQuote", "startXFlow", "doXSplitStep1", "doXSplitStep2", "checkSplitArrival", "doXSplitStep4", "doXStep1", "doXStep2", "checkArrival", "doXStep4Legacy", "doXStep4", "onXAbandon", "onArbScan", "startArbFlow", "startReturnFlow", "onCaAdd"];
   for (const fn of gated) {
@@ -74,9 +77,10 @@ function loadPage(lang) {
 
   const pages = { en: fs.readFileSync(__dirname + "/../docs/en.html", "utf8"), ja: fs.readFileSync(__dirname + "/../docs/ja.html", "utf8") };
   for (const lang of ["en", "ja"]) {
-    assert.ok(pages[lang].includes(NEW_BANNER[lang]), lang + ": new caution banner present");
-    assert.ok(!pages[lang].includes(OLD_BANNER[lang]), lang + ": old unavailable banner gone");
-    assert.ok(!/quotes and trading are unavailable|見積もりと取引は利用できません/.test(pages[lang]), lang + ": no 'unavailable' wording anywhere");
+    assert.ok(!pages[lang].includes(CAUTION_BANNER[lang]), lang + ": reopening caution banner removed (maintenance ended)");
+    assert.ok(!pages[lang].includes(OLD_BANNER[lang]), lang + ": old unavailable banner absent");
+    assert.ok(!pages[lang].includes("maintenanceBanner"), lang + ": no maintenance banner element");
+    assert.ok(!/maintenance|メンテナンス/i.test(pages[lang]), lang + ": no maintenance wording anywhere on the page");
   }
   for (const [name, html, cta] of [["EN", pages.en, "Connect wallet"], ["JA", pages.ja, "ウォレットを接続"]]) {
     assert.strictEqual((html.match(/id="connectBtn"/g) || []).length, 1, name + ": one header connect button");
@@ -85,7 +89,7 @@ function loadPage(lang) {
     assert.ok(html.indexOf('id="connectBtn"') < html.indexOf('id="themeToggle"'), name + ": header connect sits in the top actions row");
     assert.ok(html.includes('src="app.js?v=14"'), name + ": app.js cache-buster bumped to v=14");
   }
-  console.log("static: EN/JA caution banners + both connect buttons + cache-buster OK");
+  console.log("static: EN/JA pages free of any maintenance wording/banner + both connect buttons + cache-buster OK");
 
   for (const lang of ["en", "ja"]) {
     const { app, els, body } = loadPage(lang);
@@ -116,5 +120,5 @@ function loadPage(lang) {
     assert.ok(connectHandler, lang + ": connect click handler registered");
     console.log(lang + ": quote/CA handlers live (validation reached), connect handler registered");
   }
-  console.log("REOPENED-STATE PROBE (flag off / caution banner / controls live): ALL PASS");
+  console.log("POST-MAINTENANCE PROBE (flag off / no banner / controls live): ALL PASS");
 })().catch((e) => { console.error("FAIL:", e && e.message ? e.message : e); process.exit(1); });
