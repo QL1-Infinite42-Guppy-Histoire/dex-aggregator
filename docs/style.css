@@ -1,4 +1,5 @@
 :root, :root[data-theme="light"] {
+  color-scheme: light;
   --bg: #f2fbff; --card: #ffffff; --text: #17202b; --muted: #5d6b7f; --line: #d7edf8;
   --input-bg: #ffffff; --chip: #e2f6ff; --accent: #009dff; --accent-strong: #0077ff; --success: #00b368;
   --inset: #effaff; --inset-green: #eafff4; --selected-bg: #dcfce7; --selected-line: #00a86b;
@@ -12,6 +13,7 @@
   --card-shadow: 0 20px 45px rgba(0, 153, 255, .13), 0 3px 10px rgba(23, 32, 43, .06);
 }
 :root[data-theme="dark"] {
+  color-scheme: dark;
   --bg: #070b12; --card: #141a24; --text: #f5f9ff; --muted: #a9b7c8; --line: #263449;
   --input-bg: #0b111b; --chip: #1d2a3d; --accent: #33c7ff; --accent-strong: #7ee2ff; --success: #2ee06f;
   --inset: #1a2637; --inset-green: #173529; --selected-bg: #173529; --selected-line: #2ee06f;
@@ -51,6 +53,12 @@ button.big:active:not(:disabled), .header-connect:active:not(:disabled), .x-star
 .connect-row { margin-top: 10px; }
 .fld { display: block; margin-top: 10px; font-size: 12px; color: var(--muted); }
 .fld select, .fld input { width: 100%; box-sizing: border-box; margin-top: 4px; padding: 12px; font-size: 16px; border-radius: 14px; border: 1px solid var(--line); background: var(--input-bg); color: var(--text); min-height: 48px; }
+/* Native dropdown popups follow the theme via color-scheme above; these
+   rules are a belt-and-braces fallback so option text can never render
+   near-white on a light popup (or the reverse) again. Applies to every
+   select on the page (same-chain, cross-chain, language switcher). */
+select option { background: var(--input-bg); color: var(--text); }
+select option:checked { background: var(--chip); }
 .fld select:focus, .fld input:focus, .ca-row input:focus, #slipCustom:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(37,99,235,.18); }
 
 /* ---- v4 arbitrage ---- */
