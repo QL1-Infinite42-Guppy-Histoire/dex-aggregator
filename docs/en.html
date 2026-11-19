@@ -18,7 +18,7 @@
   <p class="sub">Finds the route that gives you the most, across every pool.</p>
   <p class="sub small">A "route" is the path a swap takes. For example, USDT → 42 can go directly, or via another token like USDT → FISH → 42, and which one gives more depends on the amount. This site quotes every path — including "splits" that divide your amount across several routes — and ranks them, the same idea as 1inch.</p>
 </header>
-<div id="maintenanceBanner" class="maintenance-banner" role="alert">Under maintenance — quotes and trading are unavailable.</div>
+<div id="maintenanceBanner" class="maintenance-banner" role="alert">Usable, but still under maintenance — bugs may occur.</div>
 
 <main class="layout">
 
@@ -194,6 +194,6 @@
   btn.addEventListener('click',function(){ var next=document.documentElement.dataset.theme==='dark'?'light':'dark'; document.documentElement.dataset.theme=next; try{localStorage.setItem('guppy-theme',next);}catch(e){} label(); });
 })();
 </script>
-<script src="app.js?v=13"></script>
+<script src="app.js?v=14"></script>
 </body>
 </html>

@@ -1,14 +1,29 @@
 "use strict";
-/* Maintenance-mode check (2026-11-17): docs/app.js を DOM スタブで読み、
-   MAINTENANCE_MODE が有効な間は (1) 操作部品が disabled になり (言語セレクタ
-   だけ有効)、(2) 見積もり/接続/クロス/裁定/CA追加/フロー実行の入口がすべて
-   no-op であること、(3) 静的 HTML に両言語のバナーが入っていることを検証する。
-   送信は一切しない (入口が即 return するかの確認のみ)。 */
+/* 再開状態チェック (2026-11-19 差し替え。旧: メンテナンス停止状態の検証)
+   2026-11-19 のユーザー指示でアグリゲーターは「使用可能だがメンテナンス中
+   (不具合の可能性あり)」として再開した。このプローブはその状態を検証する:
+   (1) MAINTENANCE_MODE = false で、停止機構 (全ハンドラのガードと
+       applyMaintenanceMode) はコードに残っていること、
+   (2) 両言語ページのバナーが新しい注意書きで、旧「利用できません」文面が
+       残っていないこと — フラグだけ戻したりバナーだけ戻したりすると落ちる、
+   (3) 初期化後に操作部品が disabled になっていないこと、
+   (4) 入口ハンドラが no-op ではなく実際に動くこと (不正な金額/アドレスに
+       対して検証エラーを返すところまで。送信・見積もりの実通信はしない —
+       実見積もりの確認は tools/harness.cjs と probe/*.cjs の担当)。 */
 const fs = require("fs");
 const vm = require("vm");
 const assert = require("assert");
 
 const IDS = ["chainInf", "chainQl1", "chainTest", "testnetBanner", "chainNote", "connectBtn", "connectBtnMain", "fromTokenBadge", "toTokenBadge", "xFromTokenBadge", "xToTokenBadge", "accountLine", "status", "fromToken", "toToken", "fromBalance", "toBalance", "amountIn", "flipBtn", "quoteBtn", "planArea", "routeList", "splitNote", "rateLine", "rateInvertBtn", "gasLine", "receiveOut", "minLine", "swapBtn", "txResult", "slipCustom", "caInput", "caAddBtn", "caMsg", "modeSame", "modeCross", "modeNote", "swapPanel", "caPanel", "crossPanel", "xSrcInf", "xSrcQl1", "xDstLabel", "xFromToken", "xToToken", "xFromBalance", "xAmount", "xQuoteBtn", "xStatus", "xCandidates", "xFlow", "xAbandon", "arbPanel", "arbAmount", "arbScanBtn", "arbStatus", "arbBoard", "arbTestnetNote", "langSel", "aggArea", "themeToggle"];
+
+const NEW_BANNER = {
+  en: "Usable, but still under maintenance — bugs may occur.",
+  ja: "使用可能ですが、メンテナンス中ですので不具合の可能性があります",
+};
+const OLD_BANNER = {
+  en: "Under maintenance — quotes and trading are unavailable.",
+  ja: "メンテナンス中 — 見積もりと取引は利用できません。",
+};
 
 function loadPage(lang) {
   function makeEl(id) {
@@ -45,68 +60,61 @@ function loadPage(lang) {
 }
 
 (async () => {
-  /* ---- static checks: flag + banners ---- */
+  /* ---- static checks: flag is OFF, mechanism retained, banners match ---- */
   const appSrc = fs.readFileSync(__dirname + "/../docs/app.js", "utf8");
-  assert.ok(/const MAINTENANCE_MODE = true;/.test(appSrc), "MAINTENANCE_MODE = true present");
+  assert.ok(/const MAINTENANCE_MODE = false;/.test(appSrc), "MAINTENANCE_MODE = false present (reopened 2026-11-19)");
+  assert.ok(!/const MAINTENANCE_MODE = true;/.test(appSrc), "flag must not be true in the reopened state");
+  assert.ok(/function applyMaintenanceMode\(\) \{\n  if \(!MAINTENANCE_MODE\) return;/.test(appSrc), "applyMaintenanceMode still keys off the flag (mechanism retained)");
   const gated = ["onQuote", "onConnect", "onDeployAggregator", "onSwap", "onXQuote", "startXFlow", "doXSplitStep1", "doXSplitStep2", "checkSplitArrival", "doXSplitStep4", "doXStep1", "doXStep2", "checkArrival", "doXStep4Legacy", "doXStep4", "onXAbandon", "onArbScan", "startArbFlow", "startReturnFlow", "onCaAdd"];
   for (const fn of gated) {
     const re = new RegExp("(?:async )?function " + fn + "\\([^)]*\\) \\{\\n  if \\(MAINTENANCE_MODE\\) return;");
-    assert.ok(re.test(appSrc), "handler gated: " + fn);
+    assert.ok(re.test(appSrc), "handler still carries the maintenance guard (mechanism retained): " + fn);
   }
-  console.log("static: all " + gated.length + " handlers carry the maintenance guard");
-  const en = fs.readFileSync(__dirname + "/../docs/en.html", "utf8");
-  const ja = fs.readFileSync(__dirname + "/../docs/ja.html", "utf8");
-  assert.ok(en.includes("Under maintenance — quotes and trading are unavailable."), "EN banner text");
-  assert.ok(ja.includes("メンテナンス中 — 見積もりと取引は利用できません。"), "JA banner text");
-  for (const [name, html, cta] of [["EN", en, "Connect wallet"], ["JA", ja, "ウォレットを接続"]]) {
+  console.log("static: flag=false, all " + gated.length + " handler guards + applyMaintenanceMode retained");
+
+  const pages = { en: fs.readFileSync(__dirname + "/../docs/en.html", "utf8"), ja: fs.readFileSync(__dirname + "/../docs/ja.html", "utf8") };
+  for (const lang of ["en", "ja"]) {
+    assert.ok(pages[lang].includes(NEW_BANNER[lang]), lang + ": new caution banner present");
+    assert.ok(!pages[lang].includes(OLD_BANNER[lang]), lang + ": old unavailable banner gone");
+    assert.ok(!/quotes and trading are unavailable|見積もりと取引は利用できません/.test(pages[lang]), lang + ": no 'unavailable' wording anywhere");
+  }
+  for (const [name, html, cta] of [["EN", pages.en, "Connect wallet"], ["JA", pages.ja, "ウォレットを接続"]]) {
     assert.strictEqual((html.match(/id="connectBtn"/g) || []).length, 1, name + ": one header connect button");
     assert.strictEqual((html.match(/id="connectBtnMain"/g) || []).length, 1, name + ": one main-area connect button");
     assert.ok(html.includes('id="connectBtnMain" type="button" class="big connect-cta">' + cta + "</button>"), name + ": main connect CTA label");
     assert.ok(html.indexOf('id="connectBtn"') < html.indexOf('id="themeToggle"'), name + ": header connect sits in the top actions row");
+    assert.ok(html.includes('src="app.js?v=14"'), name + ": app.js cache-buster bumped to v=14");
   }
-  console.log("static: flag + EN/JA banners + both connect buttons OK");
+  console.log("static: EN/JA caution banners + both connect buttons + cache-buster OK");
 
   for (const lang of ["en", "ja"]) {
-    const { app, els } = loadPage(lang);
-    assert.strictEqual(app.MAINTENANCE_MODE, true, lang + ": exported flag is true");
+    const { app, els, body } = loadPage(lang);
+    assert.strictEqual(app.MAINTENANCE_MODE, false, lang + ": exported flag is false");
 
-    /* initApp の最後で applyMaintenanceMode が走り、部品が無効化されている */
-    const mustBeDisabled = ["connectBtn", "connectBtnMain", "quoteBtn", "swapBtn", "fromToken", "toToken", "amountIn", "slipCustom", "caInput", "caAddBtn", "xQuoteBtn", "xAmount", "xFromToken", "xToToken", "arbScanBtn", "arbAmount", "chainInf", "chainQl1", "modeSame", "modeCross", "xAbandon", "flipBtn"];
-    for (const id of mustBeDisabled) assert.strictEqual(els[id].disabled, true, lang + ": " + id + " disabled after init");
-    assert.strictEqual(els.langSel.disabled, false, lang + ": langSel stays enabled");
+    /* initApp が走っても applyMaintenanceMode は即 return し、部品は有効なまま */
+    const mustBeEnabled = ["connectBtn", "connectBtnMain", "quoteBtn", "fromToken", "toToken", "amountIn", "slipCustom", "caInput", "caAddBtn", "xQuoteBtn", "xAmount", "xFromToken", "xToToken", "arbScanBtn", "arbAmount", "chainInf", "chainQl1", "modeSame", "modeCross", "xAbandon", "flipBtn", "langSel"];
+    for (const id of mustBeEnabled) assert.strictEqual(els[id].disabled, false, lang + ": " + id + " NOT disabled after init");
+    /* swapBtn はメンテナンスではなく通常ロジック (未接続なので updateSwapBtn が
+       無効化) で disabled になるのが v7.2 の正常挙動 */
+    assert.strictEqual(els.swapBtn.disabled, true, lang + ": swapBtn disabled by the normal no-account logic (not maintenance)");
+    assert.ok(!body.classList.contains("maintenance"), lang + ": body has no maintenance class");
     assert.strictEqual(els.fromTokenBadge.textContent, "USDT", lang + ": pay token badge syncs from the selected token");
     assert.strictEqual(els.toTokenBadge.textContent, "42", lang + ": receive token badge syncs from the selected token");
-    console.log(lang + ": controls disabled after init, langSel enabled");
+    console.log(lang + ": controls enabled after init, no maintenance class");
 
-    /* 入口が no-op であること */
-    els.amountIn.value = "10";
+    /* 入口が no-op でないこと: バリデーションまで実際に到達する
+       (メンテナンス中はここが無言で return し、status/caMsg は空のままだった) */
+    els.amountIn.value = "abc";
     await app.onQuote();
-    assert.strictEqual(app.state.routes.length, 0, lang + ": onQuote no-op (no routes)");
-    assert.strictEqual(els.status.textContent, "", lang + ": onQuote no-op (no status)");
+    assert.ok(els.status.textContent.length > 0, lang + ": onQuote is live (validation error reaches status, not a silent no-op)");
 
-    /* onConnect は export されていないので、initApp が登録した click ハンドラ経由で呼ぶ */
+    els.caInput.value = "not-an-address";
+    await app.onCaAdd();
+    assert.ok(els.caMsg.textContent.length > 0, lang + ": onCaAdd is live (format error reaches caMsg, not a silent no-op)");
+
     const connectHandler = (els.connectBtn._handlers.click || [])[0];
     assert.ok(connectHandler, lang + ": connect click handler registered");
-    await connectHandler();
-    assert.ok(!app.state.account, lang + ": onConnect no-op (no account)");
-
-    await app.onXQuote();
-    assert.strictEqual(app.state.xCandidates.length, 0, lang + ": onXQuote no-op");
-
-    await app.onArbScan();
-    assert.strictEqual(els.arbStatus.textContent, "", lang + ": onArbScan no-op");
-
-    els.caInput.value = "0x0000000000000000000000000000000000000001";
-    await app.onCaAdd();
-    assert.strictEqual(els.caMsg.textContent, "", lang + ": onCaAdd no-op");
-
-    await app.doXStep1();
-    await app.doXStep4();
-    await app.checkArrival(true);
-    await app.checkSplitArrival(true);
-    await app.startXFlow(null);
-    await app.startReturnFlow();
-    console.log(lang + ": quote/connect/cross/arb/CA/flow handlers all no-op");
+    console.log(lang + ": quote/CA handlers live (validation reached), connect handler registered");
   }
-  console.log("MAINTENANCE PROBE: ALL PASS");
+  console.log("REOPENED-STATE PROBE (flag off / caution banner / controls live): ALL PASS");
 })().catch((e) => { console.error("FAIL:", e && e.message ? e.message : e); process.exit(1); });

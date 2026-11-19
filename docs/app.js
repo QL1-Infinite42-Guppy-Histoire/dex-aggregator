@@ -24,9 +24,12 @@ const WQOM = "0xa26dfbf98dd1a32fae56a3d2b2d60a8a41b0bdf0";
 
 /* ---------- メンテナンスモード (2026-11-17〜) ----------
    true のあいだは見積もり・接続・送信など取引系の入口をすべて止める。
-   再開するときはこの値を false に戻すだけでよい (バナーは各言語ページの
-   静的 HTML 側にもあるので、戻すときはそちらも外すこと)。 */
-const MAINTENANCE_MODE = true;
+   2026-11-19: ユーザー指示で false に戻して再開した。ただし「完全復旧」
+   ではなく、バナーは各言語ページの静的 HTML 側で注意書き
+   (使用可能だがメンテナンス中につき不具合の可能性あり) に差し替えてある。
+   再び止めるときはこの値を true に戻し、バナーも利用不可の文面に戻すこと
+   (probe/maintenance.cjs がフラグとバナーの不整合を検出する)。 */
+const MAINTENANCE_MODE = false;
 
 /* ---------- i18n ---------- */
 const LANG = (typeof document !== "undefined" && document.documentElement && (document.documentElement.lang || "").toLowerCase().indexOf("en") === 0) ? "en" : "ja";
