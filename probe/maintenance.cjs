@@ -87,7 +87,7 @@ function loadPage(lang) {
     assert.strictEqual((html.match(/id="connectBtnMain"/g) || []).length, 1, name + ": one main-area connect button");
     assert.ok(html.includes('id="connectBtnMain" type="button" class="big connect-cta">' + cta + "</button>"), name + ": main connect CTA label");
     assert.ok(html.indexOf('id="connectBtn"') < html.indexOf('id="themeToggle"'), name + ": header connect sits in the top actions row");
-    assert.ok(html.includes('src="app.js?v=14"'), name + ": app.js cache-buster bumped to v=14");
+    assert.ok(html.includes('src="app.js?v=15"'), name + ": app.js cache-buster bumped to v=15");
   }
   console.log("static: EN/JA pages free of any maintenance wording/banner + both connect buttons + cache-buster OK");
 

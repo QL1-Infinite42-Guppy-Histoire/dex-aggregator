@@ -40,6 +40,8 @@ const STR = {
     errAmountPositive: "金額は0より大きくしてください",
     errNoRoute: "どのルートでも交換できませんでした（プールが無いか、流動性がありません）",
     errTokenRead: "トークンとして読み取れませんでした（アドレスが違うか、このチェーンのトークンではない可能性があります）",
+    errTokenDecimals: "トークンの decimals が不正なため追加できません（0〜36 の整数である必要があります）",
+    errSlipRange: "スリッページは 0〜50% の範囲で入力してください（入力を現在の設定値に戻しました）",
     errNoMetaMask: "MetaMaskが見つかりません。MetaMask（または対応ウォレット）を入れたブラウザで開いてください",
     errNoAccount: "アカウントが取得できませんでした", errCancelled: "ウォレット側でキャンセルされました", errUnknown: "不明なエラー",
     balanceLabel: "残高: ", balanceConnectFirst: "ウォレット接続後に表示",
@@ -99,7 +101,8 @@ const STR = {
     xQuoteFail: "クロスチェーン見積もりができませんでした: ", xNoCandidate: "成立する中継候補がありませんでした（プールが無いか、流動性がありません）",
     xVia: "中継", xSwap1: "交換1", xBridge: "ブリッジ", xSwap2: "交換2", xFinalEst: "最終見積もり",
     xDirectBridge: "直接ブリッジ（スワップなしでそのまま入る）",
-    xBridgeFeeZero: "手数料 0", xNativeFeeInf: (amt) => "＋メッセージ代 約 " + amt + " [42]", xNativeFeeQl1: "＋メッセージ代 0（実測: QL1側の送信は全て支払い0でした）",
+    xBridgeFeeZero: "手数料 0", xNativeFeeInf: (amt) => "＋メッセージ代 約 " + amt + " [42]", xNativeFeeQl1: "＋メッセージ代 0（実測: QL1側の送信は全て支払い0でした）", xNativeFeeUnknown: "＋メッセージ代 不明（取得できませんでした。送信時に再取得します）",
+    xAmountChanged: "金額が変わりました。「クロスチェーンで比べる」を押してください",
     xStartBtn: "このルートではじめる", xTooSmall: "ブリッジの最小量（1トークン）未満のため使えません",
     xBridgeMark: "ブリッジ",
     routeGone: "選んだルートが今は使えなくなりました。見積もりをやり直してください（別のルートへ自動では切り替えていません）",
@@ -161,6 +164,7 @@ const STR = {
     arbFeeZero: "ブリッジのメッセージ代は0（QL1発）",
     arbNegative: "今はマイナス（裁定なし）",
     arbUnavailable: "見積もり不可: ",
+    arbFeeUnknown: "ブリッジのメッセージ代を確認できなかったため、この行は見積もれません",
     arbStartBtn: "このルートではじめる", arbStartRtBtn: "往復の片道目ではじめる",
     arbBenchmarkRow: "基準（QOM をそのままブリッジ）",
     arbRtNote: "往復の戻りは、片道が終わったあとにこの画面の案内から開始できます（自動では送りません）。",
@@ -175,6 +179,8 @@ const STR = {
     errAmountPositive: "Amount must be greater than 0",
     errNoRoute: "No route could swap this pair (no pool or no liquidity)",
     errTokenRead: "Could not read this as a token (wrong address, or not a token on this chain)",
+    errTokenDecimals: "Cannot add this token: its decimals value is invalid (must be an integer from 0 to 36)",
+    errSlipRange: "Slippage must be between 0 and 50% (the field was restored to the active value)",
     errNoMetaMask: "MetaMask not found. Open this page in a browser with MetaMask (or a compatible wallet)",
     errNoAccount: "Could not get an account", errCancelled: "Cancelled in the wallet", errUnknown: "Unknown error",
     balanceLabel: "Balance: ", balanceConnectFirst: "Connect a wallet to see",
@@ -235,7 +241,8 @@ const STR = {
     xQuoteFail: "Cross-chain quote failed: ", xNoCandidate: "No bridge candidate works (no pool or no liquidity)",
     xVia: "Via", xSwap1: "Swap 1", xBridge: "Bridge", xSwap2: "Swap 2", xFinalEst: "Final estimate",
     xDirectBridge: "Direct bridge (no swap — enters as-is)",
-    xBridgeFeeZero: "fee 0", xNativeFeeInf: (amt) => "+ messaging cost approx. " + amt + " [42]", xNativeFeeQl1: "+ messaging cost 0 (measured: every sampled QL1 send paid 0)",
+    xBridgeFeeZero: "fee 0", xNativeFeeInf: (amt) => "+ messaging cost approx. " + amt + " [42]", xNativeFeeQl1: "+ messaging cost 0 (measured: every sampled QL1 send paid 0)", xNativeFeeUnknown: "+ messaging cost unknown (could not be fetched; it is re-fetched when sending)",
+    xAmountChanged: "Amount changed. Press \"Compare cross-chain\"",
     xStartBtn: "Start with this route", xTooSmall: "Below the bridge minimum (1 token)",
     xBridgeMark: "bridge",
     routeGone: "The route you picked no longer works. Please compare again (it was NOT switched to another route automatically)",
@@ -297,6 +304,7 @@ const STR = {
     arbFeeZero: "Bridge messaging fee is 0 (QL1 origin)",
     arbNegative: "Negative right now (no arbitrage)",
     arbUnavailable: "Cannot quote: ",
+    arbFeeUnknown: "The bridge messaging fee could not be confirmed, so this row cannot be estimated",
     arbStartBtn: "Start with this route", arbStartRtBtn: "Start the first (one-way) leg",
     arbBenchmarkRow: "Benchmark (bridge QOM itself)",
     arbRtNote: "The return leg can be started from this screen's guide after the one-way leg finishes (it is never sent automatically).",
@@ -1148,7 +1156,7 @@ async function quoteCrossPlan(srcKey, fromTok, dstKey, toTok, amountIn) {
         swap2Route: r2, finalOut,
         leg1Path: v.route ? v.route.path.slice() : null,
         leg2Path: r2 ? r2.path.slice() : null,
-        nativeFee: 0n, vsBenchDiff: null, vsBenchPct: null, isBenchmark: false,
+        nativeFee: 0n, feeUnknown: false, vsBenchDiff: null, vsBenchPct: null, isBenchmark: false,
       });
     };
     let leg2TopForBest = null;
@@ -1165,7 +1173,17 @@ async function quoteCrossPlan(srcKey, fromTok, dstKey, toTok, amountIn) {
     if (!routes.length) continue;
     routes.sort((a, b) => (b.finalOut > a.finalOut ? 1 : b.finalOut < a.finalOut ? -1 : 0));
     routes = routes.slice(0, X_MAX_ROUTES_PER_T);
-    if (srcKey === "infinite") { try { const q = await fetchBridgeNativeQuote(pair); const fee = q ? q.totalNative : 0n; for (const r of routes) r.nativeFee = fee; } catch (e) { /* shown as approx */ } }
+    if (srcKey === "infinite") {
+      /* 手数料が取れなかった場合は「0」と偽らず feeUnknown を立てる (監査
+         2026-11-24 #1)。手数料不明の候補は分割の正味判定から fail-closed で
+         外れる (bridgeFeeInSrcToken / evaluateCrossSplitNet)。単一ルートの
+         表示・実行は従来どおり (実行時はステップ2で再取得し、取れなければ
+         止まる)。 */
+      let fee = 0n, feeUnknown = false;
+      try { const q = await fetchBridgeNativeQuote(pair); if (q) fee = q.totalNative; else feeUnknown = true; }
+      catch (e) { feeUnknown = true; }
+      for (const r of routes) { r.nativeFee = fee; if (feeUnknown) r.feeUnknown = true; }
+    }
     perPair.push({ pair, routes });
     for (const r of routes) {
       if (r.swap1Route) impactItems[srcKey].push({ route: r.swap1Route, amountIn });
@@ -1312,6 +1330,7 @@ function distributeCombinedOut(totalOut, leg1Outs) {
    手数料 0 (QL1 発など) は 0n。換算できなければ null (= そのパートは
    正直に見積もれないので割り当てから外す)。 */
 async function bridgeFeeInSrcToken(srcKey, cand) {
+  if (cand.feeUnknown) return null; // 手数料不明は 0 とみなさない (fail-closed, 監査 #1)
   const fee = cand.nativeFee || 0n;
   if (fee <= 0n) return 0n;
   const nativeTok = tokenById(srcKey, "native");
@@ -1577,6 +1596,12 @@ async function evaluateCrossSplitNet(srcKey, dstKey, toTok, xs) {
   const singleFee = xs.bestSingle.nativeFee || 0n;
   const extraFeeNative = planFee > singleFee ? planFee - singleFee : 0n;
   const pctOf = (net) => xs.bestSingle.finalOut > 0n ? (Number(net) / Number(xs.bestSingle.finalOut)) * 100 : 0;
+  /* 手数料不明の候補が絡む場合は、換算失敗 (convFailed) と同じ扱いで
+     カードを出さない (監査 2026-11-24 #1)。手数料 0 のふりをした
+     正味比較はしない。 */
+  if (xs.bestSingle.feeUnknown || xs.plan.parts.some((p) => p.cand.feeUnknown)) {
+    return { shown: false, gain: planNet - xs.bestSingle.finalOut, extraFeeNative, extraFeeDest: null, netGain: null, netPct: null, convFailed: true, singleNet: null };
+  }
   if (planFee <= 0n && singleFee <= 0n) {
     const netGain = planNet - xs.bestSingle.finalOut;
     return { shown: netGain > 0n, gain: netGain, extraFeeNative: 0n, extraFeeDest: 0n, netGain, netPct: pctOf(netGain), convFailed: false, singleNet: xs.bestSingle.finalOut };
@@ -1654,14 +1679,20 @@ function crossSplitPhase(f) {
 function qomTokenId(chainKey) { return chainKey === "infinite" ? "qom" : "wqom"; }
 async function fetchBridgeFeeInQom(pair, cache) {
   if (cache && cache.has(pair.sym)) return cache.get(pair.sym);
-  let fee = 0n;
+  /* 取得・換算に失敗したら null を返す (監査 2026-11-24 #2)。0 と偽ると
+     ボードが「手数料引き済みの成立行」を捏造してしまうため、不明は不明
+     として呼び出し側に伝える。本当に 0 の場合だけ 0n を返す。 */
+  let fee = null;
   try {
     const q = await fetchBridgeNativeQuote(pair);
-    if (q && q.totalNative > 0n) {
-      const conv = await fetchBestRoute(CHAINS.infinite, tokenById("infinite", "native"), tokenById("infinite", "qom"), q.totalNative);
-      if (conv) fee = conv.amountOut;
+    if (q) {
+      if (q.totalNative <= 0n) fee = 0n;
+      else {
+        const conv = await fetchBestRoute(CHAINS.infinite, tokenById("infinite", "native"), tokenById("infinite", "qom"), q.totalNative);
+        if (conv && conv.amountOut > 0n) fee = conv.amountOut;
+      }
     }
-  } catch (e) { fee = 0n; }
+  } catch (e) { fee = null; }
   if (cache) cache.set(pair.sym, fee);
   return fee;
 }
@@ -1691,9 +1722,16 @@ async function quoteArbRoute(dirKey, pair, startRaw, feeCache) {
     endRaw = best2.amountOut; swap2Route = best2;
   }
   let feeQom = 0n;
-  if (srcKey === "infinite") feeQom = await fetchBridgeFeeInQom(pair, feeCache);
+  if (srcKey === "infinite") {
+    feeQom = await fetchBridgeFeeInQom(pair, feeCache);
+    if (feeQom == null) { row.feeUnknown = true; row.reason = t("arbFeeUnknown"); return row; }
+  }
   let feeQomRt = feeQom;
-  if (dstKey === "infinite") feeQomRt = feeQom + (await fetchBridgeFeeInQom(bridgePairBySym("QOM"), feeCache));
+  if (dstKey === "infinite") {
+    const rtFee = await fetchBridgeFeeInQom(bridgePairBySym("QOM"), feeCache);
+    if (rtFee == null) { row.feeUnknown = true; row.reason = t("arbFeeUnknown"); return row; }
+    feeQomRt = feeQom + rtFee;
+  }
   row.ok = true;
   row.midRaw = mid; row.endRaw = endRaw;
   row.swap1Route = swap1Route; row.swap2Route = swap2Route;
@@ -1751,6 +1789,10 @@ async function fetchTokenMeta(chainObj, address) {
   const symbol = decStr(res[0]); const name = decStr(res[1]);
   const decimals = res[2] ? Number(decUint(res[2])) : null;
   if (!symbol && decimals == null) throw new Error(t("errTokenRead"));
+  /* decimals は 0〜36 の整数だけを採用する (監査 2026-11-24 #5)。異常な
+     値を返すコントラクトで 10n ** decimals や padStart がタブを固めない
+     ため。decimals() 自体が無い場合は従来どおり 18 とみなす。 */
+  if (decimals != null && (!Number.isInteger(decimals) || decimals < 0 || decimals > 36)) throw new Error(t("errTokenDecimals"));
   return { id: "ca_" + addr, symbol: symbol || "?", name: name || "", address: addr, decimals: decimals != null ? decimals : 18, isNative: false, custom: true };
 }
 
@@ -2031,6 +2073,9 @@ async function sendTx(tx, valueHex) {
 }
 function txLinkHtml(hash, labelKey) {
   const c = chain();
+  /* ハッシュ形式 (0x + 64 hex) を満たさない値はリンクにせず素の文字列で
+     出す (監査 2026-11-24 #15)。ウォレット返却値を href に素通ししない。 */
+  if (!/^0x[0-9a-fA-F]{64}$/.test(hash || "")) return esc(t(labelKey)) + esc(String(hash == null ? "" : hash));
   const short = hash.slice(0, 10) + "…" + hash.slice(-6);
   if (c.explorer) return esc(t(labelKey)) + '<a href="' + esc(c.explorer + "/tx/" + hash) + '" target="_blank" rel="noopener">' + esc(short) + "</a>" + esc(t("txExplorerSuffix"));
   return esc(t(labelKey)) + esc(hash);
@@ -2082,6 +2127,8 @@ async function onDeployAggregator() {
   if (MAINTENANCE_MODE) return;  const c = chain();
   const show = (msg, isErr) => { const st = $("aggStatus"); if (st) { st.textContent = msg; st.classList.toggle("err", !!isErr); } };
   if (!state.account) { show(t("aggNeedConnectFirst"), true); return; }
+  const dbtn = $("aggDeployBtn"); // 実行中は二度押しを防ぐ (監査 2026-11-24 #7)
+  if (dbtn) { if (dbtn.disabled) return; dbtn.disabled = true; }
   try {
     await ensureChain();
     show(t("aggDeploying"));
@@ -2101,7 +2148,7 @@ async function onDeployAggregator() {
     renderRoutes();
   } catch (err) {
     show(t("aggDeployFail") + shortErr(err), true);
-  }
+  } finally { const b2 = $("aggDeployBtn"); if (b2) b2.disabled = false; }
 }
 async function onSwap() {
   if (MAINTENANCE_MODE) return;  const c = chain(); const f = currentFrom(), tk = currentTo();
@@ -2168,8 +2215,7 @@ function setXSrc(srcKey) {
   if ($("xSrcQl1")) $("xSrcQl1").classList.toggle("active", srcKey === "ql1");
   if ($("xDstLabel")) $("xDstLabel").textContent = CHAINS[xDstKey()].label;
   fillXSelects();
-  state.xCandidates = []; state.xQuote = null; state.xBenchmark = null; state.xSplit = null; state.xSplitNet = null;
-  if ($("xCandidates")) $("xCandidates").innerHTML = "";
+  clearXQuote();
   setChain(srcKey);
   refreshXBalance();
 }
@@ -2189,6 +2235,15 @@ function fillXSelects() {
   if (!$("xFromToken").value) $("xFromToken").value = allTokens(state.xSrc)[0].id;
   if (!$("xToToken").value) $("xToToken").value = allTokens(xDstKey())[0].id;
   syncTokenBadges();
+}
+/* クロス見積もり結果の一括無効化 (監査 2026-11-24 #3)。金額やトークンが
+   変わったら候補・分割プランを消し、再見積もりするまでフロー開始を
+   できなくする (startXFlow / startXSplitFlow は state.xQuote と候補を
+   必須とするため、消去だけで開始も塞がれる)。入力欄の金額と実行金額が
+   食い違う状態を作らない。 */
+function clearXQuote() {
+  state.xCandidates = []; state.xQuote = null; state.xBenchmark = null; state.xSplit = null; state.xSplitNet = null;
+  if ($("xCandidates")) $("xCandidates").innerHTML = "";
 }
 function xFrom() { return tokenById(state.xSrc, $("xFromToken").value); }
 function xTo() { return tokenById(xDstKey(), $("xToToken").value); }
@@ -2319,7 +2374,7 @@ function renderXCandidates() {
       return '<div class="route-card" style="opacity:.55"><span class="r-head"><span class="r-rank">' + esc(t("xVia")) + " " + esc(c.pair.sym) + '</span></span><span class="r-line">' + esc(c.reason || "") + "</span></div>";
     }
     const s1 = c.swap1Route ? pathLabel(state.xSrc, c.swap1Route.path) + " → " + formatAmount(c.swap1Out, c.tSrc.decimals, 6) + " " + c.tSrc.symbol + (c.swap1Route.priceImpactPct != null ? " (" + t("routeImpact", c.swap1Route.priceImpactPct.toFixed(2)) + ")" : "") : c.leg1Wrap ? t("xSwap1Wrap", formatAmount(c.swap1Out, c.tSrc.decimals, 6)) : t("xDirectBridge") + ": " + formatAmount(c.swap1Out, c.tSrc.decimals, 6) + " " + c.tSrc.symbol;
-    const fee = state.xSrc === "infinite" ? t("xBridgeFeeZero") + " / " + t("xNativeFeeInf", formatAmount(c.nativeFee, 18, 4)) : t("xBridgeFeeZero") + " / " + t("xNativeFeeQl1");
+    const fee = state.xSrc === "infinite" ? t("xBridgeFeeZero") + " / " + (c.feeUnknown ? t("xNativeFeeUnknown") : t("xNativeFeeInf", formatAmount(c.nativeFee, 18, 4))) : t("xBridgeFeeZero") + " / " + t("xNativeFeeQl1");
     const s2 = c.swap2Route ? pathLabel(xDstKey(), c.swap2Route.path) + " → " + formatAmount(c.finalOut, toTok.decimals, 6) + " " + toTok.symbol + (c.swap2Route.priceImpactPct != null ? " (" + t("routeImpact", c.swap2Route.priceImpactPct.toFixed(2)) + ")" : "") : formatAmount(c.finalOut, toTok.decimals, 6) + " " + toTok.symbol;
     const hops = (c.swap1Route ? c.swap1Route.hops : 0) + (c.swap2Route ? c.swap2Route.hops : 0);
     const bench = state.xBenchmark;
@@ -2536,6 +2591,14 @@ function renderXSplitFlow() {
     checkSplitArrival(false);
   }
 }
+/* 分割ステップの二度押し防止 (監査 2026-11-24 #7)。単一フロー側はボタン
+   無効化で防いでいるが、分割ボタンは描画し直されるため、in-flight フラグ
+   とボタン無効化を併用する。 */
+const xSplitInFlight = new Set();
+function xSplitStepBtn(act, idx) {
+  if (typeof document === "undefined" || !document.querySelector) return null;
+  try { return document.querySelector('button[data-split-act="' + act + '"][data-idx="' + idx + '"]'); } catch (e) { return null; }
+}
 async function doXSplitStep1(idx) {
   if (MAINTENANCE_MODE) return;  const f = state.xflow; if (!f || f.kind !== "split") return;
   const p = f.parts[idx]; if (!p || p.step !== 0) return;
@@ -2543,6 +2606,10 @@ async function doXSplitStep1(idx) {
   const fromTok = tokenById(f.srcKey, f.fromId);
   const { tSrc } = xSplitPartTokens(f, p);
   if (!fromTok || !tSrc) return;
+  const busyKey = "s1:" + idx;
+  if (xSplitInFlight.has(busyKey)) return;
+  xSplitInFlight.add(busyKey);
+  const stepBtn = xSplitStepBtn("s1", idx); if (stepBtn) stepBtn.disabled = true;
   try {
     if (!state.account) throw new Error(t("xNeedConnect"));
     await ensureChain(src);
@@ -2591,6 +2658,7 @@ async function doXSplitStep1(idx) {
     } catch (e) { /* keep the fresh quote */ }
     p.received = received.toString(); p.step = 1; saveXFlow(); renderXFlow();
   } catch (e) { setXStatus(t("xStepFail") + friendlyErr(e), true); }
+  finally { xSplitInFlight.delete(busyKey); if (stepBtn) stepBtn.disabled = false; }
 }
 async function doXSplitStep2(idx) {
   if (MAINTENANCE_MODE) return;  const f = state.xflow; if (!f || f.kind !== "split") return;
@@ -2598,6 +2666,10 @@ async function doXSplitStep2(idx) {
   const src = CHAINS[f.srcKey], dst = CHAINS[f.dstKey];
   const { tSrc, tDst, pair } = xSplitPartTokens(f, p);
   if (!tSrc || !tDst || !pair) return;
+  const busyKey = "s2:" + idx;
+  if (xSplitInFlight.has(busyKey)) return;
+  xSplitInFlight.add(busyKey);
+  const stepBtn = xSplitStepBtn("s2", idx); if (stepBtn) stepBtn.disabled = true;
   try {
     if (!state.account) throw new Error(t("xNeedConnect"));
     await ensureChain(src);
@@ -2619,6 +2691,7 @@ async function doXSplitStep2(idx) {
     setXStatus(t("xWorking"));
     const hash = await sendTx(tx, "0x" + tx.value.toString(16));
     p.bridgeTx = hash; p.bridgeAt = Date.now();
+    saveXFlow(); // 送信直後に保存する (監査 2026-11-24 #6、単一フローと同じ)
     try {
       const rc = await waitReceipt(hash);
       const mid = extractMessageId(rc); if (mid) p.messageId = mid;
@@ -2626,6 +2699,7 @@ async function doXSplitStep2(idx) {
     } catch (e) { if (e && e.message === t("statusSwapFailedTx")) throw e; }
     p.bridgedAmount = amount.toString(); p.step = 2; saveXFlow(); renderXFlow();
   } catch (e) { setXStatus(t("xStepFail") + friendlyErr(e), true); }
+  finally { xSplitInFlight.delete(busyKey); if (stepBtn) stepBtn.disabled = false; }
 }
 async function checkSplitArrival(manual) {
   if (MAINTENANCE_MODE) return;  const f = state.xflow; if (!f || f.kind !== "split") return false;
@@ -2659,6 +2733,10 @@ async function doXSplitStep4(idx) {
   const toTok = tokenById(f.dstKey, f.toId);
   const { tDst } = xSplitPartTokens(f, p);
   if (!toTok || !tDst) return;
+  const busyKey = "s4:" + idx;
+  if (xSplitInFlight.has(busyKey)) return;
+  xSplitInFlight.add(busyKey);
+  const stepBtn = xSplitStepBtn("s4", idx); if (stepBtn) stepBtn.disabled = true;
   try {
     if (!state.account) throw new Error(t("xNeedConnect"));
     await ensureChain(dst);
@@ -2680,6 +2758,7 @@ async function doXSplitStep4(idx) {
     p.step = 4; saveXFlow(); renderXFlow();
     if (crossSplitPhase(f) === "done") setXStatus(t("xsDone"));
   } catch (e) { setXStatus(t("xStepFail") + friendlyErr(e), true); }
+  finally { xSplitInFlight.delete(busyKey); if (stepBtn) stepBtn.disabled = false; }
 }
 function xFlowTokens() {
   const f = state.xflow; if (!f) return {};
@@ -2858,6 +2937,7 @@ async function doXStep2() {
     setXStatus(t("xWorking"));
     const hash = await sendTx(tx, "0x" + tx.value.toString(16));
     f.bridgeTx = hash; f.bridgeAt = Date.now();
+    saveXFlow(); // 送信直後に保存する (監査 2026-11-24 #6)。レシート待ちの間にタブを閉じても「送信済みなのに未送信」として再開されない
     try { const rc = await waitReceipt(hash); const mid = extractMessageId(rc); if (mid) f.messageId = mid; if (rc && rc.status === "0x0") throw new Error(t("statusSwapFailedTx")); } catch (e) { if (e && e.message === t("statusSwapFailedTx")) throw e; }
     f.step = 3; saveXFlow(); renderXFlow();
   } catch (e) { setXStatus(t("xStepFail") + friendlyErr(e), true); if (btn) btn.disabled = false; }
@@ -3039,7 +3119,7 @@ async function startReturnFlow() {
 /* ---------- CA add ---------- */
 async function onCaAdd() {
   if (MAINTENANCE_MODE) return;  const input = $("caInput"), msg = $("caMsg");
-  const m = input.value.trim().match(/0x[0-9a-fA-F]{40}/);
+  const m = input.value.trim().match(/^0x[0-9a-fA-F]{40}$/); // 全体アンカー (監査 2026-11-24 #13): 長すぎる hex を先頭40桁で黙って切り取らない
   if (!m) { msg.textContent = t("caBadFormat"); return; }
   const addr = m[0].toLowerCase();
   if (allTokens().some((tk) => tk.address.toLowerCase() === addr && !tk.isNative)) { msg.textContent = t("caExists"); return; }
@@ -3160,7 +3240,15 @@ function initApp() {
     updateMinLine();
   }));
   $("slipCustom").addEventListener("input", () => {
-    const v = parseFloat($("slipCustom").value);
+    const raw = $("slipCustom").value;
+    const v = parseFloat(raw);
+    if (raw.trim() !== "" && (isNaN(v) || v < 0 || v > 50)) {
+      /* 範囲外・非数は黙って捨てず、明示エラー＋有効な現在値に戻す
+         (監査 2026-11-24 #4)。表示と minOut の根拠を食い違わせない。 */
+      setStatus(t("errSlipRange"), true);
+      $("slipCustom").value = String(state.slippagePct);
+      return;
+    }
     if (!isNaN(v) && v >= 0 && v <= 50) { state.slippagePct = v; document.querySelectorAll(".slip-btn").forEach((x) => x.classList.remove("active")); updateMinLine(); }
   });
   $("caAddBtn").addEventListener("click", onCaAdd);
@@ -3174,7 +3262,8 @@ function initApp() {
   if ($("arbScanBtn")) $("arbScanBtn").addEventListener("click", onArbScan);
   document.querySelectorAll(".arb-chip").forEach((el) => el.addEventListener("click", () => { if ($("arbAmount")) $("arbAmount").value = el.dataset.amt; }));
   if ($("xAbandon")) $("xAbandon").addEventListener("click", onXAbandon);
-  for (const id of ["xFromToken", "xToToken"]) if ($(id)) $(id).addEventListener("change", () => { syncTokenBadges(); state.xCandidates = []; state.xQuote = null; state.xSplit = null; state.xSplitNet = null; if ($("xCandidates")) $("xCandidates").innerHTML = ""; refreshXBalance(); });
+  for (const id of ["xFromToken", "xToToken"]) if ($(id)) $(id).addEventListener("change", () => { syncTokenBadges(); clearXQuote(); refreshXBalance(); });
+  if ($("xAmount")) $("xAmount").addEventListener("input", () => { if (state.xQuote) { clearXQuote(); setXStatus(t("xAmountChanged")); } });
   loadXFlow();
   setChain("infinite");
   renderBalances();
@@ -3189,5 +3278,5 @@ if (typeof module !== "undefined" && module.exports) {
     evaluateCrossSplit, crossSplitPool, requoteSplitPart, bridgeFeeInSrcToken, makeCrossSplitQuoter, refineSplitAllocation, leg2GroupKey, combineLeg2Groups, distributeCombinedOut, attributeSplitArrivals, crossSplitPhase, startXSplitFlow, renderXSplitFlow, checkSplitArrival, doXSplitStep1, doXSplitStep2, doXSplitStep4,
     qomTokenId, fetchBridgeFeeInQom, quoteArbRoute, quoteArbBoard, renderArbBoard, onArbScan, startArbFlow, startReturnFlow,
     evaluateCrossSplitNet, buildDeployTx, decodeSplitTxData, SPLIT_BYTECODE, storedAggregator, setStoredAggregator, effectiveAggregator, aggregatorSource, renderAggArea, onDeployAggregator,
-    langTargetFor, initLangSelector, syncTokenBadges };
+    langTargetFor, initLangSelector, syncTokenBadges, txLinkHtml, clearXQuote };
 }
