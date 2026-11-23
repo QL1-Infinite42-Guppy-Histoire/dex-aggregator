@@ -42,6 +42,13 @@ const STR = {
     errTokenRead: "トークンとして読み取れませんでした（アドレスが違うか、このチェーンのトークンではない可能性があります）",
     errTokenDecimals: "トークンの decimals が不正なため追加できません（0〜36 の整数である必要があります）",
     errSlipRange: "スリッページは 0〜50% の範囲で入力してください（入力を現在の設定値に戻しました）",
+    quoteChanged: (oldOut, newOut, sym) => "送信直前の再見積もりで価格が変わっていました（見込み " + oldOut + " → " + newOut + " " + sym + "）。表示していた最低受取量を下回るため送信を止め、見積もりを取り直しました。内容を確認して、よければもう一度どうぞ。",
+    quoteGone: (oldOut, sym) => "選んだルートはもう見積もりできません（当時の見込み " + oldOut + " " + sym + "）。送信を止め、見積もりを取り直しました。内容を確認して、よければもう一度どうぞ。",
+    splitUnaudited: "注意：分割実行に使う SplitSwap コントラクトは監査を受けていません（ソース自体がテスト用と明記しています）。失っても困らない金額ではじめてください。",
+    aggVerifyRuntimeFail: "保存済みアグリゲーターを再検証できませんでした（住所にコードが無い／ルーターが違う／確認自体に失敗）。分割実行を止めました。デプロイし直すか、保存した住所を消してからお試しください。",
+    xStep1QuoteLine: (out, min, sym) => "再見積もり: 受取見込み 約 " + out + " " + sym + "（最低 " + min + " " + sym + "）",
+    xStep1Changed: (oldOut, newOut, sym) => "価格が動きました（見込み " + oldOut + " → " + newOut + " " + sym + "）。開始時に表示した最低受取量を下回るため、このクリックでは送信しませんでした。新しい数字をステップ内に表示したので、確認してもう一度ボタンを押してください。",
+    xAccountMismatch: (addr) => "このフローは別のウォレット（" + addr + "）で始めたものです。送信ステップは止めました。そのウォレットで接続し直すか、このフローを破棄してください。",
     errNoMetaMask: "MetaMaskが見つかりません。MetaMask（または対応ウォレット）を入れたブラウザで開いてください",
     errNoAccount: "アカウントが取得できませんでした", errCancelled: "ウォレット側でキャンセルされました", errUnknown: "不明なエラー",
     balanceLabel: "残高: ", balanceConnectFirst: "ウォレット接続後に表示",
@@ -181,6 +188,13 @@ const STR = {
     errTokenRead: "Could not read this as a token (wrong address, or not a token on this chain)",
     errTokenDecimals: "Cannot add this token: its decimals value is invalid (must be an integer from 0 to 36)",
     errSlipRange: "Slippage must be between 0 and 50% (the field was restored to the active value)",
+    quoteChanged: (oldOut, newOut, sym) => "The price moved on the pre-send re-quote (expected " + oldOut + " -> " + newOut + " " + sym + "), below the minimum from the quote you saw. Nothing was sent; the quote has been refreshed — please review and try again.",
+    quoteGone: (oldOut, sym) => "The selected route no longer quotes (it showed " + oldOut + " " + sym + "). Nothing was sent; the quote has been refreshed — please review and try again.",
+    splitUnaudited: "Caution: the SplitSwap contract used for split execution is unaudited (its own source calls itself a test contract). Do not use it with funds you cannot afford to lose.",
+    aggVerifyRuntimeFail: "The saved aggregator could not be re-verified (no code at the address, a different router, or the check itself failed). Split execution was stopped — deploy again or clear the saved address and try again.",
+    xStep1QuoteLine: (out, min, sym) => "Re-quote: expected approx. " + out + " " + sym + " (minimum " + min + " " + sym + ")",
+    xStep1Changed: (oldOut, newOut, sym) => "The price moved (expected " + oldOut + " -> " + newOut + " " + sym + "), below the minimum shown when this flow started, so this click did not send. The new figures are shown in the step — review them and press the button again to continue.",
+    xAccountMismatch: (addr) => "This flow was started with a different wallet (" + addr + "). The send steps are blocked — reconnect that wallet, or abandon this flow.",
     errNoMetaMask: "MetaMask not found. Open this page in a browser with MetaMask (or a compatible wallet)",
     errNoAccount: "Could not get an account", errCancelled: "Cancelled in the wallet", errUnknown: "Unknown error",
     balanceLabel: "Balance: ", balanceConnectFirst: "Connect a wallet to see",
@@ -509,6 +523,22 @@ function aggregatorSource(chainObj) {
   return storedAggregator(chainObj.key) ? "local" : null;
 }
 function splitExecutable(chainObj) { return !!effectiveAggregator(chainObj); }
+/* 保存済みアグリゲーター住所の実行直前再検証 (監査 2026-11-24 #11)。
+   ブラウザ保存の住所を使う分割実行の前に、チェーン上で「コードが存在
+   する」ことと「router() が現在のチェーンのルーターと一致する」ことを
+   確認する。RPC 確認自体が失敗した場合も含め、確認できないものは
+   fail-closed で false を返す。内蔵スロットは対象外 (サイト同梱の値)。 */
+async function verifyStoredAggregator(chainObj) {
+  const addr = storedAggregator(chainObj.key);
+  if (!addr) return false;
+  try {
+    const code = await rpcMethod(chainObj, "eth_getCode", [addr, "latest"]);
+    if (!code || code === "0x") return false;
+    const routerRes = await rpcOne(chainObj, addr, SEL.splitRouter);
+    const gotRouter = routerRes ? decAddr(routerRes) : null;
+    return gotRouter === chainObj.router.toLowerCase();
+  } catch (e) { return false; }
+}
 function allTokens(chainKey) {
   const c = CHAINS[chainKey || state.chainKey];
   return [...c.tokens, ...state.custom[c.key]];
@@ -1781,6 +1811,22 @@ function loadXFlow() {
   try { state.xflow = restoreXFlow(localStorage.getItem(XFLOW_KEY)); } catch (e) { state.xflow = null; }
   return state.xflow;
 }
+/* D (監査 2026-11-24 #12): 保存フローとウォレットの紐付け。フロー作成時
+   に接続中アカウントを記録し、再開/表示時に接続中アカウントと違えば
+   送信ステップを止める。アカウント欄の無い旧保存フローは、最初に再開
+   した時点の接続アカウントを記録して引き継ぐ (使えなくはしない)。 */
+function ensureFlowAccount(f) {
+  if (!f) return;
+  if (!f.account && state.account) { f.account = state.account; saveXFlow(); }
+}
+function xFlowAccountBlocked(f) {
+  if (!f) return false;
+  ensureFlowAccount(f);
+  return !!(f.account && state.account && f.account !== state.account);
+}
+function xFlowAccountWarn(f) {
+  return xFlowAccountBlocked(f) ? t("xAccountMismatch", shortAddr(f.account)) : null;
+}
 
 /* ---------- token metadata (CA add) ---------- */
 async function fetchTokenMeta(chainObj, address) {
@@ -1986,7 +2032,7 @@ function updateReceive() {
   const isSplit = state.selectedPlan.type === "split";
   $("swapBtn").textContent = isSplit ? t("swapBtnSplit") : t("swapBtnSingle");
   const sn = $("splitNote");
-  if (isSplit) sn.textContent = splitExecutable(chain()) ? t("splitExecutable") : (chain().isTestnet ? t("splitQuoteOnlyTestnet") : t("splitQuoteOnly"));
+  if (isSplit) sn.textContent = (splitExecutable(chain()) ? t("splitExecutable") : (chain().isTestnet ? t("splitQuoteOnlyTestnet") : t("splitQuoteOnly"))) + " " + t("splitUnaudited");
   else sn.textContent = "";
   $("swapBtn").disabled = !state.account || (isSplit && !splitExecutable(chain()));
 }
@@ -2116,6 +2162,9 @@ function renderAggArea() {
     html += '<p class="agg-line">' + esc(t("aggNone")) + (c.isTestnet ? esc(t("aggDeployTestnetNote")) : "") + "</p>" +
       '<button type="button" id="aggDeployBtn" class="agg-btn">' + esc(t("aggDeployBtn")) + "</button>";
   }
+  /* SplitSwap の未監査警告 (監査 2026-11-24 #9、表示のみ)。コントラクト
+     自体の冒頭警告とサイトの扱いを一致させる。 */
+  html += '<p class="agg-line" style="color:var(--warn-text)">' + esc(t("splitUnaudited")) + "</p>";
   html += '<p class="agg-line" id="aggStatus"></p>';
   el.innerHTML = html;
   const db = $("aggDeployBtn");
@@ -2150,6 +2199,15 @@ async function onDeployAggregator() {
     show(t("aggDeployFail") + shortErr(err), true);
   } finally { const b2 = $("aggDeployBtn"); if (b2) b2.disabled = false; }
 }
+/* A (監査 2026-11-24 #10): 送信直前の再見積もりガードで止めたときの後処理。
+   見積もり表示を取り直してから、古い見込みと新しい見込み (またはルート
+   消滅) を明示する。署名される minOut は従来どおり表示見積もり基準の
+   ままで、ここでは「表示した約束を割る送信をしない」ことだけを担う。 */
+async function sameChainRequoteAbort(oldOutText, freshOut, tk) {
+  await onQuote();
+  if (freshOut == null) setStatus(t("quoteGone", oldOutText, tk.symbol), true);
+  else setStatus(t("quoteChanged", oldOutText, formatAmount(freshOut, tk.decimals, 6), tk.symbol), true);
+}
 async function onSwap() {
   if (MAINTENANCE_MODE) return;  const c = chain(); const f = currentFrom(), tk = currentTo();
   if (!state.account) { setStatus(t("statusNeedConnect"), true); return; }
@@ -2163,6 +2221,27 @@ async function onSwap() {
       if (!splitExecutable(c)) { setStatus(c.isTestnet ? t("splitQuoteOnlyTestnet") : t("splitQuoteOnly"), true); return; }
       const plan = state.splitEval && state.splitEval.plan;
       if (!plan) { setStatus(t("statusNeedQuote"), true); return; }
+      /* A (監査 #10): 分割も送信直前に各レッグの保存パスを再見積もりし、
+         合計が表示した最低受取量を割る/レッグが消えていたら送信せず、
+         見積もりを取り直して理由を表示する。通過した場合は従来どおり
+         表示見積もり基準の minOut で送る。 */
+      let freshTotal = 0n, legGone = false;
+      for (const leg of plan.legs) {
+        const fo = await requotePathExact(c, leg.amountIn, leg.route.path);
+        if (fo == null) { legGone = true; break; }
+        freshTotal += fo;
+      }
+      if (legGone || freshTotal < applySlippageBps(plan.totalOut, state.slippagePct)) {
+        await sameChainRequoteAbort(formatAmount(plan.totalOut, tk.decimals, 6), legGone ? null : freshTotal, tk);
+        return;
+      }
+      /* C (監査 #11): ブラウザ保存のアグリゲーター住所を使う場合は、
+         実行直前にチェーン上で再検証する (コード存在 + router() 一致)。
+         確認できない場合も fail-closed で止める。 */
+      if (aggregatorSource(c) === "local") {
+        const okAgg = await verifyStoredAggregator(c);
+        if (!okAgg) { setStatus(t("aggVerifyRuntimeFail"), true); return; }
+      }
       if (!f.isNative) await ensureAllowance(effectiveAggregator(c), f, state.lastQuote.amountIn);
       const tx = buildSplitTx(c, f, tk, plan, state.account, state.slippagePct);
       setStatus(t("statusSplitConfirm"));
@@ -2177,6 +2256,15 @@ async function onSwap() {
     }
     const r = selectedRoute();
     if (!r) { setStatus(t("statusNeedQuote"), true); return; }
+    /* A (監査 #10): 送信直前に選んだルートの保存パスを再見積もりする。
+       新しい見込みが「表示した最低受取量」を割る、またはルートが消えて
+       いたら、送信せずに見積もりを取り直して理由を表示する。通過した
+       場合は従来どおり表示見積もり基準の minOut で送る。 */
+    const freshSingle = await requotePathExact(c, r.amountIn, r.path);
+    if (freshSingle == null || freshSingle < applySlippageBps(r.amountOut, state.slippagePct)) {
+      await sameChainRequoteAbort(formatAmount(r.amountOut, tk.decimals, 6), freshSingle, tk);
+      return;
+    }
     if (!f.isNative) await ensureAllowance(c.router, f, r.amountIn);
     const tx = buildSwapTx(c, f, tk, r, state.account, state.slippagePct);
     setStatus(t("statusSwapConfirm", pathLabel(state.chainKey, r.path)));
@@ -2418,6 +2506,7 @@ async function startXFlow(routeOrSym, opts) {
   try { baselineT = (cand.swap1Route || cand.leg1Wrap) ? await readTokenBalance(src, cand.tSrc.address, state.account) : 0n; } catch (e) { /* optional */ }
   state.xflow = {
     v: 1, pathsV5: true, step: (cand.swap1Route || cand.leg1Wrap) ? 1 : 2,
+    account: state.account,
     srcKey: state.xSrc, dstKey: xDstKey(), fromId: state.xQuote.fromId, toId: state.xQuote.toId,
     amountText: $("xAmount").value, amountIn: state.xQuote.amountIn,
     sym, tSrcId: cand.tSrc.id, tDstId: cand.tDst.id,
@@ -2468,6 +2557,7 @@ async function startXSplitFlow() {
   }));
   state.xflow = {
     v: 2, kind: "split",
+    account: state.account,
     srcKey: state.xSrc, dstKey: xDstKey(), fromId: state.xQuote.fromId, toId: state.xQuote.toId,
     amountText: $("xAmount").value, amountIn: state.xQuote.amountIn,
     totalEst: plan.totalOut.toString(), baselineDstBySym: {}, parts,
@@ -2500,6 +2590,8 @@ function renderXSplitFlow() {
   };
   const head = (p) => '<div class="xstep-head"><b>' + esc(t("xsPartHead", p.idx, n, p.pct, p.sym)) + "</b></div>";
   let html = '<div class="xflow">';
+  const acctWarnS = xFlowAccountWarn(f);
+  if (acctWarnS) html += '<p class="count" style="color:#ff9d9d">' + esc(acctWarnS) + "</p>";
   if (phase !== "done") html += '<p class="count">' + esc(t("xsResumeNote")) + " " + esc(src.label) + " → " + esc(dst.label) + " / " + esc(fromTok.symbol) + " → " + esc(toTok.symbol) + " / " + esc(t("xFinalEst")) + ": " + formatAmount(BigInt(f.totalEst), toTok.decimals, 6) + " " + esc(toTok.symbol) + "</p>";
   html += '<p class="count">' + esc(t("xSplitPartsNote", n)) + "</p>";
   // ---- phase 1: swap 1 per part ----
@@ -2513,6 +2605,7 @@ function renderXSplitFlow() {
         : p.leg1Wrap
           ? t("xStep1WrapDesc", formatAmount(BigInt(p.amountIn), fromTok.decimals, 6) + " " + fromTok.symbol)
           : t("xStep1Skip")) + "</p>" +
+      (p.leg1Path ? '<p class="count" id="xStep1Quote-' + p.idx + '">' + (p.step1Fresh ? esc(t("xStep1QuoteLine", formatAmount(BigInt(p.step1Fresh.out), tSrc.decimals, 6), formatAmount(BigInt(p.step1Fresh.min), tSrc.decimals, 6), tSrc.symbol)) : "") + "</p>" : "") +
       '<p class="count">' + esc(badge(p, 1)) + "</p>" +
       (p.received != null ? '<p class="count">' + esc(t("xsReceived", formatAmount(BigInt(p.received), tSrc.decimals, 6), tSrc.symbol)) + "</p>" : "") +
       (p.step === 0 ? '<button type="button" data-split-act="s1" data-idx="' + p.idx + '">' + esc(p.leg1Wrap ? t("xStep1WrapBtn") : t("xStep1Btn")) + "</button>" : "") +
@@ -2602,6 +2695,7 @@ function xSplitStepBtn(act, idx) {
 async function doXSplitStep1(idx) {
   if (MAINTENANCE_MODE) return;  const f = state.xflow; if (!f || f.kind !== "split") return;
   const p = f.parts[idx]; if (!p || p.step !== 0) return;
+  if (xFlowAccountBlocked(f)) { setXStatus(t("xAccountMismatch", shortAddr(f.account)), true); return; }
   const src = CHAINS[f.srcKey];
   const fromTok = tokenById(f.srcKey, f.fromId);
   const { tSrc } = xSplitPartTokens(f, p);
@@ -2642,6 +2736,20 @@ async function doXSplitStep1(idx) {
       p.step = "error"; p.error = t("routeGone"); p.errorPhase = 1;
       saveXFlow(); renderXFlow(); return;
     }
+    /* E (監査 #8): 署名前に再見積もりの見込みと最低量をパート内に表示
+       する。新しい見込みが開始時に表示した最低量 (estLeg1Out − スリッ
+       ページ) を割る場合は、このクリックでは送らず、新しい数字を表示
+       して確認＋再押下を促す。通過すれば従来どおり再見積もり値で送る。 */
+    const storedMinP = applySlippageBps(BigInt(p.estLeg1Out), state.slippagePct);
+    p.step1Fresh = { out: fresh.toString(), min: applySlippageBps(fresh, state.slippagePct).toString() };
+    saveXFlow();
+    const qElP = $("xStep1Quote-" + idx);
+    if (qElP) qElP.textContent = t("xStep1QuoteLine", formatAmount(fresh, tSrc.decimals, 6), formatAmount(BigInt(p.step1Fresh.min), tSrc.decimals, 6), tSrc.symbol);
+    if (fresh < storedMinP) {
+      renderXFlow();
+      setXStatus(t("xStep1Changed", formatAmount(BigInt(p.estLeg1Out), tSrc.decimals, 6), formatAmount(fresh, tSrc.decimals, 6), tSrc.symbol), true);
+      return;
+    }
     const route = { path: p.leg1Path, amountOut: fresh, amountIn, hops: p.leg1Path.length - 1 };
     if (!fromTok.isNative) await ensureAllowance(src.router, fromTok, amountIn, src);
     const tx = buildSwapTx(src, fromTok, tSrc, route, state.account, state.slippagePct);
@@ -2663,6 +2771,7 @@ async function doXSplitStep1(idx) {
 async function doXSplitStep2(idx) {
   if (MAINTENANCE_MODE) return;  const f = state.xflow; if (!f || f.kind !== "split") return;
   const p = f.parts[idx]; if (!p || p.step !== 1) return;
+  if (xFlowAccountBlocked(f)) { setXStatus(t("xAccountMismatch", shortAddr(f.account)), true); return; }
   const src = CHAINS[f.srcKey], dst = CHAINS[f.dstKey];
   const { tSrc, tDst, pair } = xSplitPartTokens(f, p);
   if (!tSrc || !tDst || !pair) return;
@@ -2729,6 +2838,7 @@ async function checkSplitArrival(manual) {
 async function doXSplitStep4(idx) {
   if (MAINTENANCE_MODE) return;  const f = state.xflow; if (!f || f.kind !== "split") return;
   const p = f.parts[idx]; if (!p || p.step !== 3 || !p.leg2Path) return;
+  if (xFlowAccountBlocked(f)) { setXStatus(t("xAccountMismatch", shortAddr(f.account)), true); return; }
   const dst = CHAINS[f.dstKey];
   const toTok = tokenById(f.dstKey, f.toId);
   const { tDst } = xSplitPartTokens(f, p);
@@ -2781,6 +2891,8 @@ function renderXFlow() {
   const st = (n) => f.step > n || f.step === "done" ? t("xStepDone") : f.step === n ? t("xStepNow") : t("xStepWait");
   const amtBridge = formatAmount(BigInt(f.bridgeOut), tSrc.decimals, 6) + " " + tSrc.symbol;
   let html = '<div class="xflow">';
+  const acctWarn = xFlowAccountWarn(f);
+  if (acctWarn) html += '<p class="count" style="color:#ff9d9d">' + esc(acctWarn) + "</p>";
   if (f.step !== "done") html += '<p class="count">' + esc(t("xResumeNote")) + " " + esc(src.label) + " → " + esc(dst.label) + " / " + esc(fromTok.symbol) + " → " + esc(toTok.symbol) + "</p>";
   // step 1
   const step1Text = f.swap1Path
@@ -2792,6 +2904,7 @@ function renderXFlow() {
   const step1Btn = f.leg1Wrap ? t("xStep1WrapBtn") : t("xStep1Btn");
   html += '<div class="xstep' + (f.step === 1 ? " current" : "") + '"><div class="xstep-head"><b>' + esc(step1Title) + '</b><span class="badge-step">' + esc(st(1)) + '</span></div>' +
     '<p class="count">' + esc(step1Text) + "</p>" +
+    (f.swap1Path ? '<p class="count" id="xStep1Quote">' + (f.step1Fresh ? esc(t("xStep1QuoteLine", formatAmount(BigInt(f.step1Fresh.out), tSrc.decimals, 6), formatAmount(BigInt(f.step1Fresh.min), tSrc.decimals, 6), tSrc.symbol)) : "") + "</p>" : "") +
     (f.step === 1 ? '<button type="button" id="xStep1Btn">' + esc(step1Btn) + "</button>" : "") + (f.swap1Tx ? '<p class="count">' + esc(shortHash(f.swap1Tx)) + "</p>" : "") + "</div>";
   // step 2
   html += '<div class="xstep' + (f.step === 2 ? " current" : "") + '"><div class="xstep-head"><b>' + esc(t("xStep2Title")) + '</b><span class="badge-step">' + esc(st(2)) + '</span></div>' +
@@ -2862,6 +2975,7 @@ async function fillStep4Quote() {
 }
 async function doXStep1() {
   if (MAINTENANCE_MODE) return;  const f = state.xflow; if (!f || f.step !== 1) return;
+  if (xFlowAccountBlocked(f)) { setXStatus(t("xAccountMismatch", shortAddr(f.account)), true); return; }
   const { fromTok, tSrc, src } = xFlowTokens();
   const btn = $("xStep1Btn"); if (btn) btn.disabled = true;
   try {
@@ -2895,6 +3009,21 @@ async function doXStep1() {
       // with a clear error instead of silently switching to another path.
       const fresh = await requotePathExact(src, BigInt(f.amountIn), f.swap1Path);
       if (fresh == null) throw new Error(t("routeGone"));
+      /* E (監査 #8): 署名前に再見積もりの見込みと最低量をステップ内に
+         表示する。新しい見込みが開始時に表示した最低量 (保存した
+         swap1Out − スリッページ) を割る場合は、このクリックでは送ら
+         ず、新しい数字を表示して確認＋再押下を促す。通過すれば従来
+         どおり再見積もり値で送る。 */
+      const storedMin = applySlippageBps(BigInt(f.swap1Out), state.slippagePct);
+      f.step1Fresh = { out: fresh.toString(), min: applySlippageBps(fresh, state.slippagePct).toString() };
+      saveXFlow();
+      const qEl = $("xStep1Quote");
+      if (qEl) qEl.textContent = t("xStep1QuoteLine", formatAmount(fresh, tSrc.decimals, 6), formatAmount(BigInt(f.step1Fresh.min), tSrc.decimals, 6), tSrc.symbol);
+      if (fresh < storedMin) {
+        renderXFlow();
+        setXStatus(t("xStep1Changed", formatAmount(BigInt(f.swap1Out), tSrc.decimals, 6), formatAmount(fresh, tSrc.decimals, 6), tSrc.symbol), true);
+        return;
+      }
       amountOut = fresh;
     }
     const route = { path: f.swap1Path, amountOut, amountIn: BigInt(f.amountIn), hops: f.swap1Path.length - 1 };
@@ -2916,6 +3045,7 @@ async function doXStep1() {
 }
 async function doXStep2() {
   if (MAINTENANCE_MODE) return;  const f = state.xflow; if (!f || f.step !== 2) return;
+  if (xFlowAccountBlocked(f)) { setXStatus(t("xAccountMismatch", shortAddr(f.account)), true); return; }
   const { tSrc, pair, src, dst } = xFlowTokens();
   const btn = $("xStep2Btn"); if (btn) btn.disabled = true;
   try {
@@ -2983,6 +3113,7 @@ function doXStep4Legacy() {
    stop with a clear error — never switch paths silently. */
 async function doXStep4() {
   if (MAINTENANCE_MODE) return;  const f = state.xflow; if (!f || f.step !== 4) return;
+  if (xFlowAccountBlocked(f)) { setXStatus(t("xAccountMismatch", shortAddr(f.account)), true); return; }
   if (!f.pathsV5) { doXStep4Legacy(); return; }
   const { tDst, toTok, dst } = xFlowTokens();
   if (!tDst || !toTok || !dst) return;
@@ -3262,6 +3393,19 @@ function initApp() {
   if ($("arbScanBtn")) $("arbScanBtn").addEventListener("click", onArbScan);
   document.querySelectorAll(".arb-chip").forEach((el) => el.addEventListener("click", () => { if ($("arbAmount")) $("arbAmount").value = el.dataset.amt; }));
   if ($("xAbandon")) $("xAbandon").addEventListener("click", onXAbandon);
+  /* D (監査 #12): ウォレットのアカウント変更に追従する。保存フローの
+     アカウント確認が常に最新の接続先で効くよう、表示も更新する。 */
+  try {
+    const e = eth();
+    if (e && typeof e.on === "function") e.on("accountsChanged", (accts) => {
+      state.account = accts && accts[0] ? String(accts[0]).toLowerCase() : null;
+      const al = $("accountLine");
+      if (al) al.textContent = state.account ? t("accountLine", shortAddr(state.account), chain().label) : "";
+      updateReceive();
+      refreshBalances();
+      if (state.mode === "cross") { renderXFlow(); refreshXBalance(); }
+    });
+  } catch (e2) { /* provider without event support */ }
   for (const id of ["xFromToken", "xToToken"]) if ($(id)) $(id).addEventListener("change", () => { syncTokenBadges(); clearXQuote(); refreshXBalance(); });
   if ($("xAmount")) $("xAmount").addEventListener("input", () => { if (state.xQuote) { clearXQuote(); setXStatus(t("xAmountChanged")); } });
   loadXFlow();
@@ -3274,9 +3418,10 @@ if (typeof document !== "undefined" && document.getElementById && document.getEl
 }
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { MAINTENANCE_MODE, applyMaintenanceMode, CHAINS, STR, LANG, state, parseAmount, formatAmount, formatRate, formatGas, encAddr, encUint, encLegsTail, encodeGetAmountsOut, decodeAmountsOut, buildCandidatePaths, fetchQuotesForTokens, evaluateSplits, buildSwapTx, buildApproveTx, buildWrapTx, decodeWrapTxData, wrapLanded, buildSplitTx, applySlippageBps, fetchTokenMeta, tokenById, allTokens, symbolFor, onQuote, onCaAdd, selectRoute, selectSplit, selectedRoute, setChain, estimateGasUnitsSingle, estimateGasUnitsSplit, splitExecutable,
-    BRIDGE_PAIRS, BRIDGE_MAILBOX, bridgePairBySym, fetchBestRoute, fetchRoutesOnly, attachImpactsMulti, buildBridgeTx, decodeBridgeTxData, encodeRecipient32, fetchBridgeNativeQuote, fetchBridgeDelivered, readTokenBalance, extractMessageId, quoteCrossPlan, requotePathExact, serializeXFlow, restoreXFlow, saveXFlow, loadXFlow, setMode, setXSrc, xDstKey, onXQuote, renderXCandidates, startXFlow, renderXFlow, checkArrival, doXStep1, doXStep4, doXStep4Legacy, onXAbandon,
+    BRIDGE_PAIRS, BRIDGE_MAILBOX, bridgePairBySym, fetchBestRoute, fetchRoutesOnly, attachImpactsMulti, buildBridgeTx, decodeBridgeTxData, encodeRecipient32, fetchBridgeNativeQuote, fetchBridgeDelivered, readTokenBalance, extractMessageId, quoteCrossPlan, requotePathExact, serializeXFlow, restoreXFlow, saveXFlow, loadXFlow, setMode, setXSrc, xDstKey, onXQuote, renderXCandidates, startXFlow, renderXFlow, checkArrival, doXStep1, doXStep2, doXStep4, doXStep4Legacy, onXAbandon,
     evaluateCrossSplit, crossSplitPool, requoteSplitPart, bridgeFeeInSrcToken, makeCrossSplitQuoter, refineSplitAllocation, leg2GroupKey, combineLeg2Groups, distributeCombinedOut, attributeSplitArrivals, crossSplitPhase, startXSplitFlow, renderXSplitFlow, checkSplitArrival, doXSplitStep1, doXSplitStep2, doXSplitStep4,
     qomTokenId, fetchBridgeFeeInQom, quoteArbRoute, quoteArbBoard, renderArbBoard, onArbScan, startArbFlow, startReturnFlow,
     evaluateCrossSplitNet, buildDeployTx, decodeSplitTxData, SPLIT_BYTECODE, storedAggregator, setStoredAggregator, effectiveAggregator, aggregatorSource, renderAggArea, onDeployAggregator,
-    langTargetFor, initLangSelector, syncTokenBadges, txLinkHtml, clearXQuote };
+    langTargetFor, initLangSelector, syncTokenBadges, txLinkHtml, clearXQuote,
+    verifyStoredAggregator, ensureFlowAccount, xFlowAccountBlocked, onSwap };
 }
