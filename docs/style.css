@@ -264,11 +264,13 @@ body.maintenance .panel { opacity: .94; }
   #swapPanel { grid-column: 1 / -1; justify-self: center; width: 100%; max-width: 640px; padding: 28px; }
   /* The cross-chain flow is long and complex: explicit full-width span. */
   #crossPanel { grid-column: 1 / -1; }
-  /* Secondary panels, explicitly placed: arbitrage left, CA add right
-     (top-aligned beside it), and the how-it-works/notes panel as a
-     full-width documentation band below them. */
-  #arbPanel { grid-column: 1; }
-  #caPanel { grid-column: 2; }
+  /* Secondary panels, explicitly placed: arbitrage and CA add each
+     span the full row like the other panels (a half-width left-column
+     placement made the arbitrage panel look shifted left against the
+     page column — user report 2026-11-25), and the
+     how-it-works/notes panel is a full-width band below them. */
+  #arbPanel { grid-column: 1 / -1; }
+  #caPanel { grid-column: 1 / -1; }
   .layout > section.panel:last-of-type { grid-column: 1 / -1; }
 }
 /* 接続ダイアログ (QOM DEX と仕様統一、2026-11-25) */
