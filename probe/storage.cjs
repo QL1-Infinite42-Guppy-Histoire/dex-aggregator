@@ -159,7 +159,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
     assert.deepStrictEqual(app.state.custom.infinite.map((t) => t.id), [VALID_TOK.id], "legacy state: mainnet customs still load");
     assert.ok(!("testnet" in app.state.custom), "legacy state: removed chain has no custom-token slot");
     assert.ok(!app.allTokens("infinite").some((t) => t.id === LEGACY_TOK.id) && !app.allTokens("ql1").some((t) => t.id === LEGACY_TOK.id), "legacy state: removed-chain token appears in no chain list");
-    assert.strictEqual(app.storedAggregator("infinite"), null, "legacy state: removed-chain aggregator does not leak into 42 Chain");
+    assert.strictEqual(app.effectiveAggregator(app.CHAINS.infinite), "0x50ea429acb073525742bae5a038615c3cd8c3a7e", "legacy state: stored aggregator entries are ignored; the shared SplitSwap resolves");
     console.log("LEGACY PASS: removed-chain leftovers in localStorage are ignored; init completes on 42 Chain");
   }
   console.log("STORAGE PROBE: ALL PASS");

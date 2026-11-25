@@ -184,15 +184,22 @@ v6 から、クロスチェーンでも **全体ルート同士の分割** を�
 同一チェーン内の分割は、専用コントラクト **SplitSwap** を使って
 1トランザクションで実行できます（従来は見積もりのみでした）。
 
-- **サイト内デプロイ**: チェーンに使える住所が無い場合、交換パネルの下に
-  「アグリゲーターをデプロイ」が出ます。自分のウォレットで1回デプロイ
-  すると（ガス代は自分の負担、実測見積もり約 1,210,366 gas）、住所が
-  そのチェーン用にブラウザ（localStorage `dexagg_aggregator_v1`）へ
-  保存され、以降そのブラウザでは分割プランをそのまま実行できます。
-  保存前に、デプロイ先にコードがあり `router()` がそのチェーンの
-  DEX ルーターと一致することを自動確認します。住所の表示（エクスプ
-  ローラーへのリンク付き）と、保存した住所の利用停止（消去）もできます。
-  サイト設定（CHAINS）に内蔵住所が入ればそちらが優先されます。
+- **共有コントラクト（2026-11-25〜）**: SplitSwap は両チェーンとも
+  同じ住所 **`0x50ea429acb073525742bae5a038615c3cd8c3a7e`** に
+  デプロイ済みで、サイトに内蔵されています（デプロイ者
+  `0x874f0ECc0EAFD3836F9C86fC16ECff268036e743`、2026-11-25。
+  42 Chain: tx `0x6f1f8bd8391bb1da9b45de4e442fb04fba0f6d88be98c89582c34294e55fddf4` /
+  QL1: tx `0xa1b4f84915c0dff5233013bfcb05ce56754a4c9656b17bcb289cb3efcd591050`）。
+  実物のランタイムバイトコードがこのリポジトリの再現可能ビルド
+  （`probe/splitswap_baseline.json`）と完全一致することと、`router()`
+  が各チェーンの DEX ルーターを指すことを照合済みです
+  （`probe/verify_shared_splitswap.cjs`）。そのため、誰でもデプロイ
+  なしで分割プランをそのまま実行できます。実行の直前にも、使う住所に
+  コードがあり `router()` が一致することを自動で再確認します
+  （確認できない場合は実行を止めます）。v7 当時の画面内デプロイと
+  ブラウザ保存は廃止され、旧バージョンが localStorage
+  （`dexagg_aggregator_v1`）に保存した住所はデータには触れませんが
+  もう使われません。
 - **コントラクトの変更（v7）**: 各レッグに最低受取量（amountOutMin）を
   追加しました。合計の最低量に加えて、レッグ単体でも見積もり−スリッ
   ページを下回ると全体が失敗します。再コンパイルは solc 0.8.26 /
@@ -202,10 +209,12 @@ v6 から、クロスチェーンでも **全体ルート同士の分割** を�
   作成バイトコード 5,601 バイト。権限なし・資産の預かりなしは従来どおり。
 - 実行は従来の分割プランそのままです: ERC20 入力ならアグリゲーターへの
   approve → splitSwap 系 tx を1回。ネイティブ入力は value = レッグ合計。
-- **正直な限界**: この開発環境からは実際の送信はしていません（鍵・資金が
-  無いため）。calldata の構築・復号の往復、デプロイ tx の見積もり
-  （両チェーンとも成功）、状態遷移は全てローカル検証済みです。実利用の
-  最初の一歩は「チェーンごとに1回デプロイ → 少額で初回の分割交換」です。
+- **正直な限界**: 共有コントラクトのデプロイ自体は利用者のウォレット
+  から実施され、上記のとおり照合済みです。一方、この開発環境からは
+  分割交換の実際の送信はしていません（鍵・資金が無いため）。calldata
+  の構築・復号の往復と状態遷移は全てローカル検証済みで、実利用の
+  最初の一歩は「少額で初回の分割交換」です。また SplitSwap は
+  未監査のコントラクトです（サイトにも警告を表示しています）。
 
 ### ブリッジの実在確認（有効範囲の根拠）
 
@@ -309,15 +318,20 @@ QL1 と 42 Chain の間の価格差を、2つの形で表面化します。
 ## 正直な限界（分割の実行について）
 
 分割を1回の取引で実行するには専用のアグリゲーター・コントラクトが必要です。
-このリポジトリにはそのコントラクト **SplitSwap**（`contracts/SplitSwap.sol`、コンパイル済み
-`contracts/SplitSwap.json`）を用意していますが、
-**サイトに内蔵された既定のデプロイは、どのチェーンにもありません**。
+そのコントラクト **SplitSwap**（`contracts/SplitSwap.sol`、コンパイル済み
+`contracts/SplitSwap.json`）は、2026-11-25 に両チェーン（42 Chain / QL1）へ
+同じ住所 **`0x50ea429acb073525742bae5a038615c3cd8c3a7e`** でデプロイされ、
+サイトに共有コントラクトとして内蔵されています。実物のバイトコードが
+このリポジトリの再現可能ビルドと完全一致することは照合済みです
+（`probe/verify_shared_splitswap.cjs`、`probe/splitswap_baseline.json`）。
 
-- v7 以降は、利用者がサイトの画面から自分のウォレットでチェーンごとに
-  デプロイでき（上記「同一チェーン分割の実行（v7）」参照）、デプロイした
-  ブラウザでは本番チェーン（42 Chain / QL1）でも分割をそのまま実行できます。
-- デプロイしていないチェーン／ブラウザでは、分割は見積もりのみで、
-  実行は単一ルートです（サイトにもその旨が表示されます）。
+- そのため、本番チェーン（42 Chain / QL1）では誰でもデプロイなしに
+  分割をそのまま実行できます（サイトにも住所が表示されます）。
+- サイトの画面から自分のウォレットでデプロイする機能は廃止されました。
+  ソースと再現可能なビルド手順はこのリポジトリに残っているので、
+  独自に検証したり自分でデプロイしたりすることは引き続き可能です。
+- SplitSwap は未監査のコントラクトです。失っても困らない金額から
+  始めてください（サイトにも警告を表示しています）。
 
 ## その他
 
@@ -542,31 +556,39 @@ hidden with the fee-lose note; case A (100 USDT -> QOM) net
 +391,804,254,401 QOM (+42.04%); case D (1,000 USDT -> qCAW) net
 +197,759,859,443 qCAW (+46.20%). Same-chain splits are unchanged.
 
-**New in v7 — same-chain splits execute, via your own SplitSwap
+**New in v7 — same-chain splits execute, via a SplitSwap
 deployment:** same-chain split plans were quote-only because the
-SplitSwap aggregator contract was deployed nowhere. Now, when a chain
-has no aggregator address, the swap panel shows a "Deploy the
-aggregator" button: your wallet deploys the exact SplitSwap bytecode
-embedded in the page (published in `contracts/`), the returned address
-is verified on-chain (code present, `router()` matches the chain's DEX
-router) and saved per chain in this browser (localStorage
-`dexagg_aggregator_v1`), and split plans then execute in one
-transaction (approve -> one split call), with a built-in CHAINS address
-slot taking precedence when set. The address is shown with an explorer
-link, and a locally saved one can be cleared. The contract itself
-changed minimally: each leg now carries its own minimum output
-(leg quote minus slippage) in addition to the total minimum, and it was
-recompiled with solc 0.8.26, optimizer 200 runs, **EVM target paris** —
-QL1's EVM rejects Shanghai PUSH0 (measured: the deploy estimate failed
-with "invalid opcode: PUSH0"), so paris is required; with it, the
-deploy estimates cleanly on both chains (≈1,210,366 gas).
+SplitSwap aggregator contract was deployed nowhere. v7 first shipped
+an in-page self-deploy flow; **since 2026-11-25 the contract is
+deployed once, shared by everyone, at the same address
+`0x50ea429acb073525742bae5a038615c3cd8c3a7e` on both chains**
+(deployer `0x874f0ECc0EAFD3836F9C86fC16ECff268036e743`, 2026-11-25;
+42 Chain tx `0x6f1f8bd8391bb1da9b45de4e442fb04fba0f6d88be98c89582c34294e55fddf4`,
+QL1 tx `0xa1b4f84915c0dff5233013bfcb05ce56754a4c9656b17bcb289cb3efcd591050`).
+The deployed runtime bytecode was verified to match this repository's
+reproducible build exactly (`probe/splitswap_baseline.json`,
+`probe/verify_shared_splitswap.cjs`), and `router()` points at each
+chain's DEX router, so split plans execute in one transaction
+(approve -> one split call) with no deployment step for users. The
+in-page deploy flow and browser-saved addresses were removed; entries
+an older version saved in localStorage (`dexagg_aggregator_v1`) are
+left untouched but no longer used. Right before a split executes, the
+site re-verifies the shared address on-chain (code present, `router()`
+matches) and stops if the check cannot be completed. The contract
+itself: each leg carries its own minimum output (leg quote minus
+slippage) in addition to the total minimum, compiled with solc 0.8.26,
+optimizer 200 runs, **EVM target paris** — QL1's EVM rejects Shanghai
+PUSH0 (measured: the deploy estimate failed with "invalid opcode:
+PUSH0"), so paris is required.
 
-Honest limits: split execution needs the SplitSwap aggregator on the
-chain you use — until you deploy it from the page (once per chain, your
-own gas), same-chain splits stay quote-only there. No transaction was
+Honest limits: the shared deployment itself was broadcast from the
+user's wallet and verified as above, but no split *swap* has been
 broadcast from the development environment (it holds no keys/funds);
-calldata construction/decoding round-trips, the deployment transaction
-and its gas estimate, and all state transitions are verified locally.
+calldata construction/decoding round-trips and all state transitions
+are verified locally, so the first real-world step is a small first
+split swap. SplitSwap remains unaudited (the site shows a warning);
+the source and the reproducible build stay in this repository for
+anyone who wants to verify it or deploy independently.
 Site root
 (English by default; Japanese at /ja.html):
 https://ql1-infinite42-guppy-histoire.github.io/dex-aggregator/
@@ -581,7 +603,7 @@ node probe/crosschain.cjs          # クロスチェーン見積もり（2方向
 node probe/arb.cjs                 # 価格差: 具体例 (42->QOM)・直接ブリッジ比較・ボード全行スナップショット
 node probe/fullroutes.cjs          # v5全体ルート: 1000 USDT->QL1 QOM の4例照合・全中継カバー・非ベストルートのcalldata照合
 node probe/splitcross.cjs          # v6〜v6.4クロス分割: 100 USDT の勝ちケース・10B QOM の対照 (v6.4でバリアント分割が小幅勝利に転じた所見)・1,000 USDT のケースC (1,300B 目標)・qCAW のケースD (R2パート入り)・パートcalldata照合
-node probe/splitswap.cjs           # v7: 内蔵バイトコードと contracts/ の一致・3バリアントのセレクタ/復号照合・デプロイtxの見積もり (両チェーン)
+node probe/splitswap.cjs           # SplitSwap: 内蔵の共有住所の解決・実チェーンの共有コントラクトと基準バイトコードの照合・3バリアントのセレクタ/復号照合
 node tools/harness.cjs             # 出荷コードを DOM スタブ上で動かす検証（JP/EN/クロスチェーン）
 node tools/bridge/sample_counts.cjs    # ブリッジ各ルーターの実txメソッド集計
 node tools/bridge/sample_delivery.cjs  # 実送信の messageId → 届け先 mailbox の delivered() 照合
@@ -589,6 +611,16 @@ node tools/bridge/sample_delivery.cjs  # 実送信の messageId → 届け先 ma
 
 ## 更新履歴
 
+- **SplitSwap 共有化（2026-11-25）**: SplitSwap を両チェーンとも同じ
+  住所 `0x50ea429acb073525742bae5a038615c3cd8c3a7e` にデプロイし
+  （デプロイ者 `0x874f0ECc0EAFD3836F9C86fC16ECff268036e743`）、
+  実物バイトコードがリポジトリの再現可能ビルドと完全一致することを
+  照合したうえで、サイトの共有コントラクトとして固定した。あわせて
+  バイトコードをソースから再生成してリポジトリ内で完全に再現可能に
+  し（差分はメタデータハッシュのみ）、42 Testnet のサポートを終了した。
+  画面内デプロイとブラウザ保存の仕組みは廃止され、旧保存住所は
+  無視される。実行直前の再検証（コード存在＋ router() 一致、
+  fail-closed）は共有住所に対して行われる。
 - **v7.2（2026-11-14）**: QL1 の素の QOM を出すトークンに選んだとき、
   QOM をそのままブリッジする直接経路が見積もりから消えていた問題を修正
   （ユーザー指摘「wqomでのブリッジが書いてないけど、これが一番安いの？」）。

@@ -418,21 +418,19 @@ function loadPage(lang, seedStore) {
   console.log("[V6.5-JP caseD] net verdict: shown:", netD && netD.shown, "| net gain:", netD && jp64.app.formatAmount(netD.netGain, 18, 2), "qCAW | extra fee in dest terms:", netD && jp64.app.formatAmount(netD.extraFeeDest, 18, 2), "qCAW");
   console.log("[V6.5-EN caseD] net verdict: shown:", netDE && netDE.shown, "| net line on card (EN):", en64.els.xCandidates.innerHTML.includes("After the extra bridge cost"));
 
-  // ---- v7: aggregator storage / deploy tx / split calldata round-trip ----
-  const fs7 = require("fs"), path7 = require("path");
-  const artBc = JSON.parse(fs7.readFileSync(path7.join(__dirname, "..", "contracts", "SplitSwap.json"), "utf8")).bytecode;
+  // ---- v7: shared aggregator resolution / split calldata round-trip ----
+  // 2026-11-25 共有化: 画面内デプロイとブラウザ保存は廃止され、解決は
+  // 両チェーンとも内蔵の共有 SplitSwap に一本化された。旧保存住所が
+  // localStorage に残っていても無視されることをここで固定する。
   const jp7 = loadPage("ja", {});
   const a7 = jp7.app;
   const acct7 = "0x1111111111111111111111111111111111111111";
-  console.log("\n[V7-JP] fresh page: splitExecutable(infinite):", a7.splitExecutable(a7.CHAINS.infinite), "| aggArea deploy btn:", jp7.els.aggArea.innerHTML.includes("アグリゲーターをデプロイ"), "| effectiveAggregator:", a7.effectiveAggregator(a7.CHAINS.infinite), "| source:", a7.aggregatorSource(a7.CHAINS.infinite));
-  const dtx = a7.buildDeployTx(a7.CHAINS.infinite);
-  const dtx2 = a7.buildDeployTx(a7.CHAINS.ql1);
-  console.log("[V7] deploy tx: to null:", dtx.to === null, "| value 0:", dtx.value === 0n, "| data starts with SPLIT_BYTECODE:", dtx.data.startsWith(a7.SPLIT_BYTECODE), "| ctor arg == infinite router:", ("0x" + dtx.data.slice(-40)) === a7.CHAINS.infinite.router.toLowerCase(), "| ql1 ctor arg == ql1 router:", ("0x" + dtx2.data.slice(-40)) === a7.CHAINS.ql1.router.toLowerCase(), "| embedded bytecode == contracts artifact:", a7.SPLIT_BYTECODE === artBc);
+  const SHARED_AGG = "0x50ea429acb073525742bae5a038615c3cd8c3a7e";
+  console.log("\n[V7-JP] fresh page: splitExecutable(infinite):", a7.splitExecutable(a7.CHAINS.infinite), "| effectiveAggregator:", a7.effectiveAggregator(a7.CHAINS.infinite), "| source:", a7.aggregatorSource(a7.CHAINS.infinite), "| aggArea shows shared addr:", jp7.els.aggArea.innerHTML.includes(SHARED_AGG), "| aggArea has NO deploy button:", !jp7.els.aggArea.innerHTML.includes("アグリゲーターをデプロイ"));
+  console.log("[V7] ql1: splitExecutable:", a7.splitExecutable(a7.CHAINS.ql1), "| effectiveAggregator:", a7.effectiveAggregator(a7.CHAINS.ql1));
   const FAKE_AGG = "0x3333333333333333333333333333333333333333";
-  a7.setStoredAggregator("infinite", FAKE_AGG);
-  console.log("[V7] stored: splitExecutable:", a7.splitExecutable(a7.CHAINS.infinite), "| source:", a7.aggregatorSource(a7.CHAINS.infinite), "| storedAggregator:", a7.storedAggregator("infinite"));
-  a7.renderAggArea();
-  console.log("[V7-JP] aggArea in-use: addr shown:", jp7.els.aggArea.innerHTML.includes("0x3333"), "| clear btn:", jp7.els.aggArea.innerHTML.includes("使うのをやめる"), "| explorer link:", jp7.els.aggArea.innerHTML.includes("/address/" + FAKE_AGG));
+  const jp7s = loadPage("ja", { dexagg_aggregator_v1: JSON.stringify({ infinite: FAKE_AGG, ql1: FAKE_AGG }) });
+  console.log("[V7] stored entry present but ignored: effectiveAggregator(infinite):", jp7s.app.effectiveAggregator(jp7s.app.CHAINS.infinite), "| source:", jp7s.app.aggregatorSource(jp7s.app.CHAINS.infinite), "| aggArea shows shared (not stored):", jp7s.els.aggArea.innerHTML.includes(SHARED_AGG) && !jp7s.els.aggArea.innerHTML.includes(FAKE_AGG));
   const usdt7 = a7.tokenById("infinite", "usdt"), fish7 = a7.tokenById("infinite", "fish"), nat7 = a7.tokenById("infinite", "native");
   const plan7 = { legs: [
     { route: { path: [usdt7.address, fish7.address], hops: 1 }, pct: 60, amountIn: 600n * 10n ** 6n, amountOut: 5000n * 10n ** 18n },
@@ -441,7 +439,7 @@ function loadPage(lang, seedStore) {
   const txTT = a7.buildSplitTx(a7.CHAINS.infinite, usdt7, fish7, plan7, acct7, 1, 1700000000);
   const decTT = a7.decodeSplitTxData(txTT.data);
   const legsOk7 = !!decTT && decTT.legs.every((l, i) => l.amountIn === plan7.legs[i].amountIn && l.amountOutMin === a7.applySlippageBps(plan7.legs[i].amountOut, 1) && l.path.join() === plan7.legs[i].route.path.map((x) => x.toLowerCase()).join());
-  console.log("[V7] swapSplit round-trip: to == stored agg:", txTT.to === FAKE_AGG, "| fn:", decTT && decTT.functionName, "| legs:", decTT && decTT.legs.length, "| legs round-trip (amountIn/minOut/path):", legsOk7, "| total min matches:", !!decTT && decTT.amountOutMinTotal === a7.applySlippageBps(plan7.totalOut, 1), "| tokenIn:", decTT && decTT.tokenIn === usdt7.address.toLowerCase(), "| tokenOut:", decTT && decTT.tokenOut === fish7.address.toLowerCase(), "| value:", txTT.value === 0n);
+  console.log("[V7] swapSplit round-trip: to == shared agg:", txTT.to === SHARED_AGG, "| fn:", decTT && decTT.functionName, "| legs:", decTT && decTT.legs.length, "| legs round-trip (amountIn/minOut/path):", legsOk7, "| total min matches:", !!decTT && decTT.amountOutMinTotal === a7.applySlippageBps(plan7.totalOut, 1), "| tokenIn:", decTT && decTT.tokenIn === usdt7.address.toLowerCase(), "| tokenOut:", decTT && decTT.tokenOut === fish7.address.toLowerCase(), "| value:", txTT.value === 0n);
   const txTN = a7.buildSplitTx(a7.CHAINS.infinite, usdt7, nat7, plan7, acct7, 0.5, 1700000000);
   const decTN = a7.decodeSplitTxData(txTN.data);
   console.log("[V7] swapSplitToNative round-trip: fn:", decTN && decTN.functionName, "| legs:", decTN && decTN.legs.length, "| tokenIn:", !!decTN && decTN.tokenIn === usdt7.address.toLowerCase(), "| total min:", !!decTN && decTN.amountOutMinTotal === a7.applySlippageBps(plan7.totalOut, 0.5), "| value:", txTN.value === 0n);
@@ -455,13 +453,10 @@ function loadPage(lang, seedStore) {
   const se7 = a7.state.splitEval;
   if (se7 && se7.plan) {
     a7.selectSplit();
-    console.log("[V7-JP] split plan + stored agg: selectedPlan:", JSON.stringify(a7.state.selectedPlan), "| swapBtn enabled:", jp7.els.swapBtn.disabled === false, "| swapBtn label:", jp7.els.swapBtn.textContent, "| splitNote executable:", jp7.els.splitNote.textContent.includes("そのまま実行できます"));
+    console.log("[V7-JP] split plan + shared agg: selectedPlan:", JSON.stringify(a7.state.selectedPlan), "| swapBtn enabled:", jp7.els.swapBtn.disabled === false, "| swapBtn label:", jp7.els.swapBtn.textContent, "| splitNote executable:", jp7.els.splitNote.textContent.includes("そのまま実行できます"));
   } else console.log("[V7-JP] note: no same-chain split plan at 500 USDT->FISH this run (pool state)");
-  a7.setStoredAggregator("infinite", null);
-  a7.renderAggArea();
-  console.log("[V7] cleared: splitExecutable:", a7.splitExecutable(a7.CHAINS.infinite), "| aggArea deploy btn back:", jp7.els.aggArea.innerHTML.includes("アグリゲーターをデプロイ"));
   const en7 = loadPage("en", {});
-  console.log("[V7-EN] aggArea: title:", en7.els.aggArea.innerHTML.includes("Split contract"), "| deploy btn:", en7.els.aggArea.innerHTML.includes("Deploy the aggregator"));
+  console.log("[V7-EN] aggArea: title:", en7.els.aggArea.innerHTML.includes("Split contract"), "| shared addr shown:", en7.els.aggArea.innerHTML.includes(SHARED_AGG), "| NO deploy button:", !en7.els.aggArea.innerHTML.includes("Deploy the aggregator"));
 
   console.log("\nHARNESS DONE");
 })().catch((e) => { console.error("HARNESS FAILED:", e); process.exit(1); });

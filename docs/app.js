@@ -45,7 +45,7 @@ const STR = {
     quoteChanged: (oldOut, newOut, sym) => "送信直前の再見積もりで価格が変わっていました（見込み " + oldOut + " → " + newOut + " " + sym + "）。表示していた最低受取量を下回るため送信を止め、見積もりを取り直しました。内容を確認して、よければもう一度どうぞ。",
     quoteGone: (oldOut, sym) => "選んだルートはもう見積もりできません（当時の見込み " + oldOut + " " + sym + "）。送信を止め、見積もりを取り直しました。内容を確認して、よければもう一度どうぞ。",
     splitUnaudited: "注意：分割実行に使う SplitSwap コントラクトは監査を受けていません（ソース自体がテスト用と明記しています）。失っても困らない金額ではじめてください。",
-    aggVerifyRuntimeFail: "保存済みアグリゲーターを再検証できませんでした（住所にコードが無い／ルーターが違う／確認自体に失敗）。分割実行を止めました。デプロイし直すか、保存した住所を消してからお試しください。",
+    aggVerifyRuntimeFail: "共有の分割用コントラクトを再確認できませんでした（住所にコードが無い／ルーターが違う／確認自体に失敗）。分割実行を止めました。しばらくしてからもう一度お試しください。",
     xStep1QuoteLine: (out, min, sym) => "再見積もり: 受取見込み 約 " + out + " " + sym + "（最低 " + min + " " + sym + "）",
     xStep1Changed: (oldOut, newOut, sym) => "価格が動きました（見込み " + oldOut + " → " + newOut + " " + sym + "）。開始時に表示した最低受取量を下回るため、このクリックでは送信しませんでした。新しい数字をステップ内に表示したので、確認してもう一度ボタンを押してください。",
     xAccountMismatch: (addr) => "このフローは別のウォレット（" + addr + "）で始めたものです。送信ステップは止めました。そのウォレットで接続し直すか、このフローを破棄してください。",
@@ -81,21 +81,14 @@ const STR = {
     planSingleBest: "単一ルート", planSplitTitle: "分割プラン", badgeRecommended: "おすすめ",
     splitVsSingle: (d) => "単一ベストより " + (d >= 0 ? "+" : "") + d + "%",
     splitLost: (amt, sym) => "分割も比べました（最良の分割は約 " + amt + " " + sym + "）。今回は単一ルートがいちばんです。",
-    splitQuoteOnly: "分割の実行には専用コントラクトが必要です。下の「アグリゲーターをデプロイ」で自分のウォレットから用意すると、そのまま実行できます（今は見積もりのみ）。",
+    splitQuoteOnly: "分割の実行には共有の分割用コントラクトが必要ですが、このチェーンでは利用できません（今は見積もりのみ）。",
     splitExecutable: "このチェーンには分割用コントラクトがあるため、分割プランをそのまま実行できます。",
     aggTitle: "分割用コントラクト（アグリゲーター）",
-    aggNone: "このチェーンにはまだ分割用コントラクトがありません。自分のウォレットからデプロイすると（ガス代は自分の負担です）、住所がこのブラウザに保存されて、分割プランをそのまま実行できるようになります。デプロイされるのは、このサイトのリポジトリで公開している SplitSwap そのものです（資産を預かる仕組みはなく、交換のたびに自分の分だけを通すだけです）。",
-    aggDeployBtn: "アグリゲーターをデプロイ",
-    aggNeedConnectFirst: "デプロイには先にウォレット接続が必要です。",
     aggInUse: (addr) => "使用中: " + addr,
-    aggSourceBuiltin: "サイト内蔵の住所",
-    aggSourceLocal: "このブラウザに保存した住所",
+    aggSourceBuiltin: "共有コントラクト",
     aggExplorer: "エクスプローラーで開く",
-    aggClearBtn: "使うのをやめる（このブラウザの保存を消す）",
-    aggDeploying: "デプロイの取引をウォレットで確認してください…",
-    aggDeployed: (addr) => "デプロイできました: " + addr + "（このブラウザに保存しました。分割プランを比べ直すと実行できるようになります）",
-    aggDeployFail: "デプロイできませんでした: ",
-    aggVerifyFail: "デプロイ先にコントラクト（または想定と違うルーター）を確認できませんでした。保存はしていません。",
+    aggSharedNote: "共有の SplitSwap コントラクトがこのサイトに組み込まれています。デプロイは不要で、分割プランをそのまま実行できます。",
+    aggUnavailable: "このチェーンでは分割用コントラクトを利用できません。",
     minReceived: (slip, amt, sym) => "最低でも受け取る量（スリッページ " + slip + "% を引いた額）: " + amt + " " + sym,
     rateInvertTitle: "レート表示を反転", txSentLabel: "交換の取引を送りました: ", txSentSplitLabel: "分割交換の取引を送りました: ", txExplorerSuffix: "（エクスプローラーで開きます）",
     caBadFormat: "アドレスの形式が違います（0x + 40文字）", caExists: "そのトークンはもう一覧にあります", caReading: "チェーンから読み取り中…",
@@ -189,7 +182,7 @@ const STR = {
     quoteChanged: (oldOut, newOut, sym) => "The price moved on the pre-send re-quote (expected " + oldOut + " -> " + newOut + " " + sym + "), below the minimum from the quote you saw. Nothing was sent; the quote has been refreshed — please review and try again.",
     quoteGone: (oldOut, sym) => "The selected route no longer quotes (it showed " + oldOut + " " + sym + "). Nothing was sent; the quote has been refreshed — please review and try again.",
     splitUnaudited: "Caution: the SplitSwap contract used for split execution is unaudited (its own source calls itself a test contract). Do not use it with funds you cannot afford to lose.",
-    aggVerifyRuntimeFail: "The saved aggregator could not be re-verified (no code at the address, a different router, or the check itself failed). Split execution was stopped — deploy again or clear the saved address and try again.",
+    aggVerifyRuntimeFail: "The shared split contract could not be re-verified (no code at the address, a different router, or the check itself failed). Split execution was stopped — please try again later.",
     xStep1QuoteLine: (out, min, sym) => "Re-quote: expected approx. " + out + " " + sym + " (minimum " + min + " " + sym + ")",
     xStep1Changed: (oldOut, newOut, sym) => "The price moved (expected " + oldOut + " -> " + newOut + " " + sym + "), below the minimum shown when this flow started, so this click did not send. The new figures are shown in the step — review them and press the button again to continue.",
     xAccountMismatch: (addr) => "This flow was started with a different wallet (" + addr + "). The send steps are blocked — reconnect that wallet, or abandon this flow.",
@@ -226,21 +219,14 @@ const STR = {
     planSingleBest: "Single route", planSplitTitle: "Split plan", badgeRecommended: "Recommended",
     splitVsSingle: (d) => (d >= 0 ? "+" : "") + d + "% vs best single route",
     splitLost: (amt, sym) => "Splits were compared too (best split approx. " + amt + " " + sym + "). A single route is best this time.",
-    splitQuoteOnly: "Executing a split needs a dedicated aggregator contract. Deploy one from your own wallet below and the plan can be executed as shown (quote only for now).",
+    splitQuoteOnly: "Executing a split needs the shared split contract, which is not available on this chain (quote only for now).",
     splitExecutable: "This chain has a split contract, so the split plan can be executed as shown.",
     aggTitle: "Split contract (aggregator)",
-    aggNone: "This chain has no split contract yet. Deploying one from your own wallet (you pay the gas) saves its address in this browser and makes split plans executable as shown. What gets deployed is exactly the SplitSwap contract published in this site's repository — it never custodies funds; it only passes your own swap through on each call.",
-    aggDeployBtn: "Deploy the aggregator",
-    aggNeedConnectFirst: "Connect your wallet first to deploy.",
     aggInUse: (addr) => "In use: " + addr,
-    aggSourceBuiltin: "built-in address",
-    aggSourceLocal: "address saved in this browser",
+    aggSourceBuiltin: "shared contract",
     aggExplorer: "Open in the explorer",
-    aggClearBtn: "Stop using it (clear this browser's saved address)",
-    aggDeploying: "Confirm the deployment transaction in your wallet...",
-    aggDeployed: (addr) => "Deployed: " + addr + " (saved in this browser. Compare routes again and the split plan becomes executable)",
-    aggDeployFail: "Could not deploy: ",
-    aggVerifyFail: "No contract (or an unexpected router) could be confirmed at the deployed address. Nothing was saved.",
+    aggSharedNote: "A shared SplitSwap contract is built into this site — no deployment is needed, and split plans can be executed as shown.",
+    aggUnavailable: "No split contract is available on this chain.",
     minReceived: (slip, amt, sym) => "Minimum you receive (after " + slip + "% slippage): " + amt + " " + sym,
     rateInvertTitle: "Invert rate", txSentLabel: "Swap transaction sent: ", txSentSplitLabel: "Split swap transaction sent: ", txExplorerSuffix: " (opens in the explorer)",
     caBadFormat: "Invalid address format (0x + 40 characters)", caExists: "That token is already in the list", caReading: "Reading from the chain...",
@@ -335,7 +321,7 @@ const CHAINS = {
     explorer: "https://scan.infinitedrive.xyz",
     router: "0xbf07dfe35746894bae373f63f4bf2379f9bafec0",
     factory: "0x3157c6aca800d507af95ab1466adbA3a6f11eE1a",
-    nativeAnchor: NATIVE_PH, aggregator: "",
+    nativeAnchor: NATIVE_PH, aggregator: "0x50ea429acb073525742bae5a038615c3cd8c3a7e",
     tokens: [
       { id: "native", symbol: "42", name: "42 (native)", address: NATIVE_PH, decimals: 18, isNative: true },
       { id: "usdt", symbol: "USDT", name: "Bridged USDT", address: "0xc2684966e5c95b2bc636fb4a1f3da9ad23d94753", decimals: 18, isNative: false },
@@ -367,7 +353,7 @@ const CHAINS = {
     explorer: "https://scan.qom.network",
     router: "0xc1f90231035a52091ebcb7dddaCa3051a5F44f30".toLowerCase(),
     factory: "0x475f361993d6facbf32fb82b66be0fb40f3d974c",
-    nativeAnchor: WQOM, aggregator: "",
+    nativeAnchor: WQOM, aggregator: "0x50ea429acb073525742bae5a038615c3cd8c3a7e",
     tokens: [
       { id: "native", symbol: "QOM", name: "QOM (native)", address: WQOM, decimals: 18, isNative: true },
       { id: "wqom", symbol: "WQOM", name: "Wrapped QOM", address: WQOM, decimals: 18, isNative: false },
@@ -463,42 +449,26 @@ const state = {
 };
 function chain() { return CHAINS[state.chainKey]; }
 /* ---------- v7: SplitSwap (aggregator) address resolution ----------
-   分割実行に使えるアグリゲーター住所は2か所から決まる:
-   1) CHAINS の内蔵スロット (aggregator) — デプロイ済みの既定住所が入れば最優先。
-   2) このブラウザの localStorage (dexagg_aggregator_v1) — サイト内の
-      「アグリゲーターをデプロイ」でユーザーが自分のウォレットからデプロイ
-      した住所。チェーンごとに保存する。 */
-const AGG_KEY = "dexagg_aggregator_v1";
-function loadAggStore() {
-  try { const v = JSON.parse(localStorage.getItem(AGG_KEY) || "{}"); return v && typeof v === "object" ? v : {}; } catch (e) { return {}; }
-}
-function storedAggregator(chainKey) {
-  const v = loadAggStore()[chainKey];
-  return typeof v === "string" && /^0x[0-9a-fA-F]{40}$/.test(v) ? v.toLowerCase() : null;
-}
-function setStoredAggregator(chainKey, addr) {
-  const s = loadAggStore();
-  if (addr) s[chainKey] = addr.toLowerCase(); else delete s[chainKey];
-  try { localStorage.setItem(AGG_KEY, JSON.stringify(s)); } catch (e) { /* storage unavailable */ }
-}
+   分割実行に使うアグリゲーター住所は、CHAINS の内蔵スロットに入った
+   共有 SplitSwap (2026-11-25 に両チェーンへデプロイされ、バイトコード
+   まで照合済み) のみ。旧バージョンが localStorage
+   (dexagg_aggregator_v1) に保存した住所は、データ自体には触れないが
+   もう一切使わない (解決は共有住所に一本化された)。 */
 function effectiveAggregator(chainObj) {
   if (!chainObj) return null;
-  if (chainObj.aggregator && chainObj.aggregator.length === 42) return chainObj.aggregator.toLowerCase();
-  return storedAggregator(chainObj.key);
+  return chainObj.aggregator && chainObj.aggregator.length === 42 ? chainObj.aggregator.toLowerCase() : null;
 }
 function aggregatorSource(chainObj) {
-  if (!chainObj) return null;
-  if (chainObj.aggregator && chainObj.aggregator.length === 42) return "builtin";
-  return storedAggregator(chainObj.key) ? "local" : null;
+  return effectiveAggregator(chainObj) ? "builtin" : null;
 }
 function splitExecutable(chainObj) { return !!effectiveAggregator(chainObj); }
-/* 保存済みアグリゲーター住所の実行直前再検証 (監査 2026-11-24 #11)。
-   ブラウザ保存の住所を使う分割実行の前に、チェーン上で「コードが存在
-   する」ことと「router() が現在のチェーンのルーターと一致する」ことを
-   確認する。RPC 確認自体が失敗した場合も含め、確認できないものは
-   fail-closed で false を返す。内蔵スロットは対象外 (サイト同梱の値)。 */
-async function verifyStoredAggregator(chainObj) {
-  const addr = storedAggregator(chainObj.key);
+/* 共有アグリゲーター住所の実行直前再検証 (監査 2026-11-24 #11、2026-11-25
+   の共有化で対象を内蔵の共有住所へ一般化)。分割実行の前に、チェーン上で
+   「コードが存在する」ことと「router() が現在のチェーンのルーターと
+   一致する」ことを確認する。RPC 確認自体が失敗した場合も含め、確認
+   できないものは fail-closed で false を返す。 */
+async function verifyAggregator(chainObj) {
+  const addr = effectiveAggregator(chainObj);
   if (!addr) return false;
   try {
     const code = await rpcMethod(chainObj, "eth_getCode", [addr, "latest"]);
@@ -926,13 +896,9 @@ async function wrapLanded(chainObj, wqomAddr, account, baseline, amountIn, txHas
   } catch (e) { /* fall through to pending */ }
   return "pending";
 }
-/* SplitSwap の作成バイトコード (contracts/SplitSwap.json と同一。solc
-   0.8.26 + optimizer 200 runs、EVM ターゲット paris、5601 bytes)。サイト内デプロイは
-   このバイトコードにチェーンの DEX ルーター住所を付けて送るだけ。 */
-const SPLIT_BYTECODE = "0x60a0604052348015600f57600080fd5b506040516115e13803806115e1833981016040819052602c916080565b6001600160a01b03811660705760405162461bcd60e51b81526020600482015260086024820152670726f757465723d360c41b604482015260640160405180910390fd5b6001600160a01b031660805260ae565b600060208284031215609157600080fd5b81516001600160a01b038116811460a757600080fd5b9392505050565b6080516114e86100f96000396000818160bc0152818161025701528181610322015281816104160152818161079101528181610ad601528181610ba10152610c9501526114e86000f3fe60806040526004361061003f5760003560e01c80632f88d6d514610044578063c5b2c8c414610077578063dbbdfd971461008a578063f887ea40146100aa575b600080fd5b34801561005057600080fd5b5061006461005f36600461107f565b6100f6565b6040519081526020015b60405180910390f35b61006461008536600461110a565b6106ba565b34801561009657600080fd5b506100646100a5366004611182565b6109df565b3480156100b657600080fd5b506100de7f000000000000000000000000000000000000000000000000000000000000000081565b6040516001600160a01b03909116815260200161006e565b600080610104888885610e71565b6040516323b872dd60e01b8152336004820152306024820152604481018290529091506001600160a01b038a16906323b872dd906064016020604051808303816000875af115801561015a573d6000803e3d6000fd5b505050506040513d601f19601f8201168201806040525081019061017e91906111e5565b6101c55760405162461bcd60e51b81526020600482015260136024820152721d1c985b9cd9995c919c9bdb4819985a5b1959606a1b60448201526064015b60405180910390fd5b6040516370a0823160e01b81526001600160a01b038581166004830152600091908716906370a0823190602401602060405180830381865afa15801561020f573d6000803e3d6000fd5b505050506040513d601f19601f82011682018060405250810190610233919061120e565b905060005b8881101561056b5760405163095ea7b360e01b81526001600160a01b037f000000000000000000000000000000000000000000000000000000000000000081166004830152600060248301528c169063095ea7b3906044016020604051808303816000875af11580156102af573d6000803e3d6000fd5b505050506040513d601f19601f820116820180604052508101906102d391906111e5565b6103115760405162461bcd60e51b815260206004820152600f60248201526e185c1c1c9bdd994c0819985a5b1959608a1b60448201526064016101bc565b8a6001600160a01b031663095ea7b37f00000000000000000000000000000000000000000000000000000000000000008c8c8581811061035357610353611227565b9050602002810190610365919061123d565b60405160e084901b6001600160e01b03191681526001600160a01b0390921660048301523560248201526044016020604051808303816000875af11580156103b1573d6000803e3d6000fd5b505050506040513d601f19601f820116820180604052508101906103d591906111e5565b6104125760405162461bcd60e51b815260206004820152600e60248201526d185c1c1c9bdd994819985a5b195960921b60448201526064016101bc565b60007f00000000000000000000000000000000000000000000000000000000000000006001600160a01b03166338ed17398c8c8581811061045557610455611227565b9050602002810190610467919061123d565b358d8d8681811061047a5761047a611227565b905060200281019061048c919061123d565b602001358e8e878181106104a2576104a2611227565b90506020028101906104b4919061123d565b6104c290604081019061125d565b8c8c6040518763ffffffff1660e01b81526004016104e5969594939291906112ef565b6000604051808303816000875af1158015610504573d6000803e3d6000fd5b505050506040513d6000823e601f3d908101601f1916820160405261052c9190810190611343565b9050806001825161053d9190611426565b8151811061054d5761054d611227565b602002602001015185610560919061143f565b945050600101610238565b506040516370a0823160e01b81526001600160a01b03868116600483015260009183918916906370a0823190602401602060405180830381865afa1580156105b7573d6000803e3d6000fd5b505050506040513d601f19601f820116820180604052508101906105db919061120e565b6105e59190611426565b9050878110156106075760405162461bcd60e51b81526004016101bc90611452565b878410156106575760405162461bcd60e51b815260206004820152601760248201527f616d6f756e744f757428726f7574657229203c206d696e00000000000000000060448201526064016101bc565b604080518481526020810186905260ff8b168183015290516001600160a01b0389811692908e169133917fc9751d16e97a64a0f7f5108dc0cda1bb9a8f46aced9ecccb6d5633111a199f94919081900360600190a4505050979650505050505050565b6000806106c8888885610e71565b90508034146107125760405162461bcd60e51b81526020600482015260166024820152756d73672e76616c756520213d2073756d286c6567732960501b60448201526064016101bc565b6040516370a0823160e01b81526001600160a01b038581166004830152600091908716906370a0823190602401602060405180830381865afa15801561075c573d6000803e3d6000fd5b505050506040513d601f19601f82011682018060405250810190610780919061120e565b905060005b888110156108e55760007f00000000000000000000000000000000000000000000000000000000000000006001600160a01b0316637ff36ab58c8c858181106107d0576107d0611227565b90506020028101906107e2919061123d565b358d8d868181106107f5576107f5611227565b9050602002810190610807919061123d565b602001358e8e8781811061081d5761081d611227565b905060200281019061082f919061123d565b61083d90604081019061125d565b8c8c6040518763ffffffff1660e01b815260040161085f95949392919061147b565b60006040518083038185885af115801561087d573d6000803e3d6000fd5b50505050506040513d6000823e601f3d908101601f191682016040526108a69190810190611343565b905080600182516108b79190611426565b815181106108c7576108c7611227565b6020026020010151856108da919061143f565b945050600101610785565b506040516370a0823160e01b81526001600160a01b038681166004830152889183918916906370a0823190602401602060405180830381865afa158015610930573d6000803e3d6000fd5b505050506040513d601f19601f82011682018060405250810190610954919061120e565b61095e9190611426565b101561097c5760405162461bcd60e51b81526004016101bc90611452565b604080518381526020810185905260ff8a16918101919091526001600160a01b0387169060009033907fc9751d16e97a64a0f7f5108dc0cda1bb9a8f46aced9ecccb6d5633111a199f94906060015b60405180910390a450509695505050505050565b6000806109ed878785610e71565b6040516323b872dd60e01b8152336004820152306024820152604481018290529091506001600160a01b038916906323b872dd906064016020604051808303816000875af1158015610a43573d6000803e3d6000fd5b505050506040513d601f19601f82011682018060405250810190610a6791906111e5565b610aa95760405162461bcd60e51b81526020600482015260136024820152721d1c985b9cd9995c919c9bdb4819985a5b1959606a1b60448201526064016101bc565b6001600160a01b0384163160005b87811015610dea5760405163095ea7b360e01b81526001600160a01b037f000000000000000000000000000000000000000000000000000000000000000081166004830152600060248301528b169063095ea7b3906044016020604051808303816000875af1158015610b2e573d6000803e3d6000fd5b505050506040513d601f19601f82011682018060405250810190610b5291906111e5565b610b905760405162461bcd60e51b815260206004820152600f60248201526e185c1c1c9bdd994c0819985a5b1959608a1b60448201526064016101bc565b896001600160a01b031663095ea7b37f00000000000000000000000000000000000000000000000000000000000000008b8b85818110610bd257610bd2611227565b9050602002810190610be4919061123d565b60405160e084901b6001600160e01b03191681526001600160a01b0390921660048301523560248201526044016020604051808303816000875af1158015610c30573d6000803e3d6000fd5b505050506040513d601f19601f82011682018060405250810190610c5491906111e5565b610c915760405162461bcd60e51b815260206004820152600e60248201526d185c1c1c9bdd994819985a5b195960921b60448201526064016101bc565b60007f00000000000000000000000000000000000000000000000000000000000000006001600160a01b03166318cbafe58b8b85818110610cd457610cd4611227565b9050602002810190610ce6919061123d565b358c8c86818110610cf957610cf9611227565b9050602002810190610d0b919061123d565b602001358d8d87818110610d2157610d21611227565b9050602002810190610d33919061123d565b610d4190604081019061125d565b8c8c6040518763ffffffff1660e01b8152600401610d64969594939291906112ef565b6000604051808303816000875af1158015610d83573d6000803e3d6000fd5b505050506040513d6000823e601f3d908101601f19168201604052610dab9190810190611343565b90508060018251610dbc9190611426565b81518110610dcc57610dcc611227565b602002602001015185610ddf919061143f565b945050600101610ab7565b5085610e00826001600160a01b03881631611426565b1015610e1e5760405162461bcd60e51b81526004016101bc90611452565b604080518381526020810185905260ff8916918101919091526000906001600160a01b038b169033907fc9751d16e97a64a0f7f5108dc0cda1bb9a8f46aced9ecccb6d5633111a199f94906060016109cb565b600060018310801590610e85575060088311155b610ebd5760405162461bcd60e51b81526020600482015260096024820152680d8cacee640625c5c760bb1b60448201526064016101bc565b42821015610ef75760405162461bcd60e51b8152602060048201526007602482015266195e1c1a5c995960ca1b60448201526064016101bc565b60005b8381101561100f576000858583818110610f1657610f16611227565b9050602002810190610f28919061123d565b3511610f655760405162461bcd60e51b815260206004820152600c60248201526b06c656720616d6f756e743d360a41b60448201526064016101bc565b6002858583818110610f7957610f79611227565b9050602002810190610f8b919061123d565b610f9990604081019061125d565b90501015610fd65760405162461bcd60e51b815260206004820152600a6024820152693830ba34103632b71e1960b11b60448201526064016101bc565b848482818110610fe857610fe8611227565b9050602002810190610ffa919061123d565b61100590358361143f565b9150600101610efa565b509392505050565b80356001600160a01b038116811461102e57600080fd5b919050565b60008083601f84011261104557600080fd5b50813567ffffffffffffffff81111561105d57600080fd5b6020830191508360208260051b850101111561107857600080fd5b9250929050565b600080600080600080600060c0888a03121561109a57600080fd5b6110a388611017565b9650602088013567ffffffffffffffff8111156110bf57600080fd5b6110cb8a828b01611033565b909750955050604088013593506110e460608901611017565b92506110f260808901611017565b96999598509396929591949193505060a09091013590565b60008060008060008060a0878903121561112357600080fd5b863567ffffffffffffffff81111561113a57600080fd5b61114689828a01611033565b9097509550506020870135935061115f60408801611017565b925061116d60608801611017565b95989497509295919493608090920135925050565b60008060008060008060a0878903121561119b57600080fd5b6111a487611017565b9550602087013567ffffffffffffffff8111156111c057600080fd5b6111cc89828a01611033565b9096509450506040870135925061116d60608801611017565b6000602082840312156111f757600080fd5b8151801515811461120757600080fd5b9392505050565b60006020828403121561122057600080fd5b5051919050565b634e487b7160e01b600052603260045260246000fd5b60008235605e1983360301811261125357600080fd5b9190910192915050565b6000808335601e1984360301811261127457600080fd5b83018035915067ffffffffffffffff82111561128f57600080fd5b6020019150600581901b360382131561107857600080fd5b81835260208301925060008160005b848110156112e5576001600160a01b036112cf83611017565b16865260209586019591909101906001016112b6565b5093949350505050565b86815285602082015260a06040820152600061130f60a0830186886112a7565b6001600160a01b039490941660608301525060800152949350505050565b634e487b7160e01b600052604160045260246000fd5b60006020828403121561135557600080fd5b815167ffffffffffffffff81111561136c57600080fd5b8201601f8101841361137d57600080fd5b805167ffffffffffffffff8111156113975761139761132d565b8060051b604051601f19603f830116810181811067ffffffffffffffff821117156113c4576113c461132d565b6040529182526020818401810192908101878411156113e257600080fd5b6020850194505b83851015611405578451808252602095860195909350016113e9565b509695505050505050565b634e487b7160e01b600052601160045260246000fd5b8181038181111561143957611439611410565b92915050565b8082018082111561143957611439611410565b6020808252600f908201526e30b6b7bab73a27baba101e1036b4b760891b604082015260600190565b8581526080602082015260006114956080830186886112a7565b6001600160a01b039490941660408301525060600152939250505056fea26469706673582212205fc30f0521d627852e4085efdfc863301f9d1b1dc772c066fa47f8bca55afbb464736f6c634300081a0033";
 
-/* SplitSwap への分割実行 calldata。有効なアグリゲーター住所 (内蔵スロット
-   またはブラウザ保存) が無いチェーンでは呼ばないこと。
+/* SplitSwap への分割実行 calldata。共有アグリゲーター住所 (内蔵スロット)
+   が無いチェーンでは呼ばないこと。
    v7: 各レッグに「そのレッグの見積もり受取量 − スリッページ」の最低受取量
    (amountOutMin) を入れ、合計の最低量と合わせて二重に守る。 */
 function buildSplitTx(chainObj, fromTok, toTok, plan, account, slippagePct, nowSec) {
@@ -990,12 +956,6 @@ function decodeSplitTxData(data) {
   if (fn === "swapSplitToNative") { out.tokenIn = asAddr(0); out.amountOutMinTotal = asUint(2); out.to = asAddr(3); out.deadline = asUint(4); }
   if (fn === "swapSplitFromNative") { out.amountOutMinTotal = asUint(1); out.tokenOut = asAddr(2); out.to = asAddr(3); out.deadline = asUint(4); }
   return out;
-}
-/* SplitSwap のデプロイ tx (サイト内デプロイ用)。creation bytecode の末尾に
-   コンストラクタ引数 (そのチェーンの DEX ルーター住所) を付ける通常の
-   コントラクト作成 tx。to は null (作成)。 */
-function buildDeployTx(chainObj) {
-  return { to: null, data: SPLIT_BYTECODE + encAddr(chainObj.router), value: 0n, functionName: "deploySplitSwap", router: chainObj.router.toLowerCase() };
 }
 
 /* ---------- v3 cross-chain: light best-route quote (no split evaluation) ---------- */
@@ -2215,65 +2175,28 @@ async function ensureAllowance(spender, token, amountIn, chainObj) {
   const rc = await waitReceipt(ah);
   if (rc && rc.status === "0x0") throw new Error(t("statusApproveFail"));
 }
-/* ---------- v7: aggregator (SplitSwap) deploy UI ----------
-   チェーンごとに: 有効な住所があればその住所＋出典を表示し、ブラウザ保存の
-   場合だけ「使うのをやめる」消去ボタンを出す。無ければ説明と
-   「アグリゲーターをデプロイ」ボタン。デプロイはユーザーのウォレットで
-   作成 tx を1回送り、 receipt の contractAddress を読み、コードが存在し
-   router() がそのチェーンの DEX ルーターと一致することを確認してから
-   保存する (誤った住所を保存しない)。 */
+/* ---------- v7: aggregator (SplitSwap) info area ----------
+   共有 SplitSwap (両チェーンとも 2026-11-25 にデプロイされ、バイト
+   コードまで照合済み) の住所とエクスプローラーへのリンクを示すだけの
+   表示領域。デプロイやブラウザ保存といった利用者側の用意はもう無い。 */
 function renderAggArea() {
   const el = $("aggArea");
   if (!el) return;
   const c = chain();
   const agg = effectiveAggregator(c);
-  const src = aggregatorSource(c);
   let html = '<p class="agg-title">' + esc(t("aggTitle")) + "</p>";
   if (agg) {
-    html += '<p class="agg-line">' + esc(t("aggInUse", shortAddr(agg))) +
-      ' <span class="count">(' + esc(t(src === "builtin" ? "aggSourceBuiltin" : "aggSourceLocal")) + ")</span></p>" +
+    html += '<p class="agg-line">' + esc(t("aggInUse", agg)) +
+      ' <span class="count">(' + esc(t("aggSourceBuiltin")) + ")</span></p>" +
       (c.explorer ? '<p class="agg-line"><a href="' + esc(c.explorer + "/address/" + agg) + '" target="_blank" rel="noopener">' + esc(t("aggExplorer")) + "</a></p>" : "") +
-      (src === "local" ? '<button type="button" id="aggClearBtn" class="agg-btn">' + esc(t("aggClearBtn")) + "</button>" : "");
+      '<p class="agg-line">' + esc(t("aggSharedNote")) + "</p>";
   } else {
-    html += '<p class="agg-line">' + esc(t("aggNone")) + "</p>" +
-      '<button type="button" id="aggDeployBtn" class="agg-btn">' + esc(t("aggDeployBtn")) + "</button>";
+    html += '<p class="agg-line">' + esc(t("aggUnavailable")) + "</p>";
   }
   /* SplitSwap の未監査警告 (監査 2026-11-24 #9、表示のみ)。コントラクト
      自体の冒頭警告とサイトの扱いを一致させる。 */
   html += '<p class="agg-line" style="color:var(--warn-text)">' + esc(t("splitUnaudited")) + "</p>";
-  html += '<p class="agg-line" id="aggStatus"></p>';
   el.innerHTML = html;
-  const db = $("aggDeployBtn");
-  if (db) db.addEventListener("click", onDeployAggregator);
-  const cb = $("aggClearBtn");
-  if (cb) cb.addEventListener("click", () => { setStoredAggregator(c.key, null); renderAggArea(); renderRoutes(); });
-}
-async function onDeployAggregator() {
-  if (MAINTENANCE_MODE) return;  const c = chain();
-  const show = (msg, isErr) => { const st = $("aggStatus"); if (st) { st.textContent = msg; st.classList.toggle("err", !!isErr); } };
-  if (!state.account) { show(t("aggNeedConnectFirst"), true); return; }
-  const dbtn = $("aggDeployBtn"); // 実行中は二度押しを防ぐ (監査 2026-11-24 #7)
-  if (dbtn) { if (dbtn.disabled) return; dbtn.disabled = true; }
-  try {
-    await ensureChain();
-    show(t("aggDeploying"));
-    const tx = buildDeployTx(c);
-    const hash = await sendTx(tx, "0x0");
-    const rc = await waitReceipt(hash);
-    if (!rc || rc.status !== "0x1" || !rc.contractAddress) throw new Error("receipt missing contractAddress");
-    const addr = rc.contractAddress.toLowerCase();
-    // 保存する前に検証: コードが存在し、router() が期待どおりであること。
-    const code = await rpcMethod(c, "eth_getCode", [addr, "latest"]);
-    const routerRes = await rpcOne(c, addr, SEL.splitRouter).catch(() => null);
-    const gotRouter = routerRes ? decAddr(routerRes) : null;
-    if (!code || code === "0x" || gotRouter !== c.router.toLowerCase()) { show(t("aggVerifyFail"), true); return; }
-    setStoredAggregator(c.key, addr);
-    show(t("aggDeployed", addr));
-    renderAggArea();
-    renderRoutes();
-  } catch (err) {
-    show(t("aggDeployFail") + shortErr(err), true);
-  } finally { const b2 = $("aggDeployBtn"); if (b2) b2.disabled = false; }
 }
 /* A (監査 2026-11-24 #10): 送信直前の再見積もりガードで止めたときの後処理。
    見積もり表示を取り直してから、古い見込みと新しい見込み (またはルート
@@ -2311,13 +2234,12 @@ async function onSwap() {
         await sameChainRequoteAbort(formatAmount(plan.totalOut, tk.decimals, 6), legGone ? null : freshTotal, tk);
         return;
       }
-      /* C (監査 #11): ブラウザ保存のアグリゲーター住所を使う場合は、
-         実行直前にチェーン上で再検証する (コード存在 + router() 一致)。
-         確認できない場合も fail-closed で止める。 */
-      if (aggregatorSource(c) === "local") {
-        const okAgg = await verifyStoredAggregator(c);
-        if (!okAgg) { setStatus(t("aggVerifyRuntimeFail"), true); return; }
-      }
+      /* C (監査 #11、2026-11-25 の共有化で一般化): 実行に使う共有
+         アグリゲーター住所は、実行直前にチェーン上で再検証する
+         (コード存在 + router() 一致)。確認できない場合も fail-closed
+         で止める。 */
+      const okAgg = await verifyAggregator(c);
+      if (!okAgg) { setStatus(t("aggVerifyRuntimeFail"), true); return; }
       if (!f.isNative) await ensureAllowance(effectiveAggregator(c), f, state.lastQuote.amountIn);
       const tx = buildSplitTx(c, f, tk, plan, state.account, state.slippagePct);
       setStatus(t("statusSplitConfirm"));
@@ -3506,8 +3428,8 @@ if (typeof module !== "undefined" && module.exports) {
     BRIDGE_PAIRS, BRIDGE_MAILBOX, bridgePairBySym, fetchBestRoute, fetchRoutesOnly, attachImpactsMulti, buildBridgeTx, decodeBridgeTxData, encodeRecipient32, fetchBridgeNativeQuote, fetchBridgeDelivered, readTokenBalance, extractMessageId, quoteCrossPlan, requotePathExact, serializeXFlow, restoreXFlow, saveXFlow, loadXFlow, setMode, setXSrc, xDstKey, onXQuote, renderXCandidates, startXFlow, renderXFlow, checkArrival, doXStep1, doXStep2, doXStep4, doXStep4Legacy, onXAbandon,
     evaluateCrossSplit, crossSplitPool, requoteSplitPart, bridgeFeeInSrcToken, makeCrossSplitQuoter, refineSplitAllocation, leg2GroupKey, combineLeg2Groups, distributeCombinedOut, attributeSplitArrivals, crossSplitPhase, startXSplitFlow, renderXSplitFlow, checkSplitArrival, doXSplitStep1, doXSplitStep2, doXSplitStep4,
     qomTokenId, fetchBridgeFeeInQom, quoteArbRoute, quoteArbBoard, renderArbBoard, onArbScan, startArbFlow, startReturnFlow,
-    evaluateCrossSplitNet, buildDeployTx, decodeSplitTxData, SPLIT_BYTECODE, storedAggregator, setStoredAggregator, effectiveAggregator, aggregatorSource, renderAggArea, onDeployAggregator,
+    evaluateCrossSplitNet, decodeSplitTxData, effectiveAggregator, aggregatorSource, renderAggArea,
     langTargetFor, initLangSelector, syncTokenBadges, txLinkHtml, clearXQuote,
-    verifyStoredAggregator, ensureFlowAccount, xFlowAccountBlocked, onSwap,
+    verifyAggregator, ensureFlowAccount, xFlowAccountBlocked, onSwap,
     openConnDialog, onConnClose, onDisconnect, renderDisconnected };
 }

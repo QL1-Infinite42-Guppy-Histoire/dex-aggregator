@@ -68,7 +68,9 @@ function loadPage(lang) {
   assert.ok(/const MAINTENANCE_MODE = false;/.test(appSrc), "MAINTENANCE_MODE = false present (maintenance ended 2026-11-19)");
   assert.ok(!/const MAINTENANCE_MODE = true;/.test(appSrc), "flag must not be true in the post-maintenance state");
   assert.ok(/function applyMaintenanceMode\(\) \{\n  if \(!MAINTENANCE_MODE\) return;/.test(appSrc), "applyMaintenanceMode still keys off the flag (mechanism retained)");
-  const gated = ["onQuote", "onConnect", "onDeployAggregator", "onSwap", "onXQuote", "startXFlow", "doXSplitStep1", "doXSplitStep2", "checkSplitArrival", "doXSplitStep4", "doXStep1", "doXStep2", "checkArrival", "doXStep4Legacy", "doXStep4", "onXAbandon", "onArbScan", "startArbFlow", "startReturnFlow", "onCaAdd", "openConnDialog", "onConnClose", "onDisconnect"];
+  /* 2026-11-25: onDeployAggregator は SplitSwap 共有化 (画面内デプロイ廃止)
+     で削除されたため、ガード対象は 23 → 22 ハンドラに減った。 */
+  const gated = ["onQuote", "onConnect", "onSwap", "onXQuote", "startXFlow", "doXSplitStep1", "doXSplitStep2", "checkSplitArrival", "doXSplitStep4", "doXStep1", "doXStep2", "checkArrival", "doXStep4Legacy", "doXStep4", "onXAbandon", "onArbScan", "startArbFlow", "startReturnFlow", "onCaAdd", "openConnDialog", "onConnClose", "onDisconnect"];
   for (const fn of gated) {
     const re = new RegExp("(?:async )?function " + fn + "\\([^)]*\\) \\{\\n  if \\(MAINTENANCE_MODE\\) return;");
     assert.ok(re.test(appSrc), "handler still carries the maintenance guard (mechanism retained): " + fn);
@@ -87,7 +89,7 @@ function loadPage(lang) {
     assert.strictEqual((html.match(/id="connectBtnMain"/g) || []).length, 1, name + ": one main-area connect button");
     assert.ok(html.includes('id="connectBtnMain" type="button" class="big connect-cta">' + cta + "</button>"), name + ": main connect CTA label");
     assert.ok(html.indexOf('id="connectBtn"') < html.indexOf('id="themeToggle"'), name + ": header connect sits in the top actions row");
-    assert.ok(html.includes('src="app.js?v=23"'), name + ": app.js cache-buster bumped to v=23");
+    assert.ok(html.includes('src="app.js?v=24"'), name + ": app.js cache-buster bumped to v=24");
   }
   console.log("static: EN/JA pages free of any maintenance wording/banner + both connect buttons + cache-buster OK");
 

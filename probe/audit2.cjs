@@ -6,9 +6,11 @@
      表示した最低量を割ると送信せず見積もりを取り直して理由を表示する。
      問題なければ表示見積もり基準の minOut のまま送信される。
    - B (#9) SplitSwap 未監査警告がデプロイ領域に出る。
-   - C (#11) verifyStoredAggregator: コード無し/router() 不一致/RPC
-     失敗はすべて false (fail-closed)、一致すれば true。分割実行も
-     再検証に失敗すると送信前に止まる。
+   - C (#11、2026-11-25 共有化で一般化) verifyAggregator: 共有
+     SplitSwap 住所に対するコード無し/router() 不一致/RPC 失敗は
+     すべて false (fail-closed)、一致すれば true。分割実行も再検証に
+     失敗すると送信前に止まる。localStorage の旧保存住所は無視され、
+     解決は常に共有住所になることもここで固定する。
    - D (#12) 旧保存フローは初回再開時に接続アカウントへ紐付き、別
      アカウントでは単一/分割の送信ステップが止まる。
    - E (#8) クロス step1: 再見積もりをステップ内に表示し、開始時の
@@ -20,14 +22,15 @@ const assert = require("assert");
 const ACCT_A = "0x1111111111111111111111111111111111111111";
 const ACCT_B = "0x2222222222222222222222222222222222222222";
 const FAKE_AGG = "0x3333333333333333333333333333333333333333";
+const SHARED_AGG = "0x50ea429acb073525742bae5a038615c3cd8c3a7e"; // 内蔵の共有 SplitSwap
 const FAKE_HASH = "0x" + "ab".repeat(32);
 const E18 = 10n ** 18n;
 
 /* ---------- controllable stubs ---------- */
 let freshOut = 1000n * E18;         // getAmountsOut の末尾 (見込み) を差す
-let aggCode = "0x60006000";         // FAKE_AGG の eth_getCode
-let aggRouterRet = null;            // FAKE_AGG の router() 応答 (住所)
-let aggRpcFail = false;             // FAKE_AGG 宛の確認を全部失敗させる
+let aggCode = "0x60006000";         // SHARED_AGG の eth_getCode
+let aggRouterRet = null;            // SHARED_AGG の router() 応答 (住所)
+let aggRpcFail = false;             // SHARED_AGG 宛の確認を全部失敗させる
 const sentTxs = [];
 const ethListeners = {};
 
@@ -38,7 +41,7 @@ function stubDecision(call) {
   if (!call) return { handled: false };
   const params = call.params || [];
   if (call.method === "eth_getCode") {
-    if (String(params[0] || "").toLowerCase() === FAKE_AGG) {
+    if (String(params[0] || "").toLowerCase() === SHARED_AGG) {
       return aggRpcFail ? { handled: true, error: { code: -32000, message: "stub rpc fail" } } : { handled: true, result: aggCode };
     }
     return { handled: false };
@@ -48,7 +51,7 @@ function stubDecision(call) {
   const to = String(p.to || "").toLowerCase();
   const data = String(p.data || "");
   if (data.startsWith("0xd06ca61f")) return { handled: true, result: amountsResult(freshOut) };
-  if (to === FAKE_AGG && data.startsWith("0xf887ea40")) {
+  if (to === SHARED_AGG && data.startsWith("0xf887ea40")) {
     return aggRpcFail ? { handled: true, error: { code: -32000, message: "stub rpc fail" } } : { handled: true, result: "0x" + word(aggRouterRet || 0) };
   }
   return { handled: false };
@@ -202,10 +205,15 @@ function baseFlowSplit(extra) {
   }
 
   /* ================= A-split + C ================= */
-  console.log("=== A3/C: same-chain split guard + stored aggregator re-verification ===");
+  console.log("=== A3/C: same-chain split guard + shared aggregator re-verification ===");
   {
     const preset = { dexagg_aggregator_v1: JSON.stringify({ infinite: FAKE_AGG }) };
     const { app, els } = loadPage("en", preset);
+    // 解決ルール (2026-11-25 共有化): 旧保存住所があっても無視され、常に共有住所
+    assert.strictEqual(app.effectiveAggregator(app.CHAINS.infinite), SHARED_AGG, "C0: stored entry ignored, shared address resolves");
+    assert.strictEqual(app.aggregatorSource(app.CHAINS.infinite), "builtin", "C0: source is builtin even with a stored entry present");
+    assert.strictEqual(app.effectiveAggregator(app.CHAINS.ql1), SHARED_AGG, "C0: ql1 also resolves to the shared address");
+    console.log("  C0 PASS: stored aggregator entry ignored; both chains resolve to the shared SplitSwap");
     const setupSplit = () => {
       app.state.account = ACCT_A;
       app.state.chainKey = "infinite";
@@ -220,14 +228,14 @@ function baseFlowSplit(extra) {
 
     // C unit-level: three failure modes + success
     aggRpcFail = false; aggCode = "0x"; aggRouterRet = ROUTER;
-    assert.strictEqual(await app.verifyStoredAggregator(app.CHAINS.infinite), false, "C1: no code -> false");
+    assert.strictEqual(await app.verifyAggregator(app.CHAINS.infinite), false, "C1: no code -> false");
     aggCode = "0x60006000"; aggRouterRet = USDT;
-    assert.strictEqual(await app.verifyStoredAggregator(app.CHAINS.infinite), false, "C2: router mismatch -> false");
+    assert.strictEqual(await app.verifyAggregator(app.CHAINS.infinite), false, "C2: router mismatch -> false");
     aggRpcFail = true;
-    assert.strictEqual(await app.verifyStoredAggregator(app.CHAINS.infinite), false, "C3: RPC failure -> false (fail closed)");
+    assert.strictEqual(await app.verifyAggregator(app.CHAINS.infinite), false, "C3: RPC failure -> false (fail closed)");
     aggRpcFail = false; aggRouterRet = ROUTER;
-    assert.strictEqual(await app.verifyStoredAggregator(app.CHAINS.infinite), true, "C4: code + matching router -> true");
-    console.log("  C1-C4 PASS: verifyStoredAggregator fails closed on no-code / mismatch / RPC error, passes on match");
+    assert.strictEqual(await app.verifyAggregator(app.CHAINS.infinite), true, "C4: code + matching router -> true");
+    console.log("  C1-C4 PASS: verifyAggregator fails closed on no-code / mismatch / RPC error, passes on match");
 
     // A-split abort (guard fires before C, which would pass here)
     setupSplit();
@@ -248,14 +256,15 @@ function baseFlowSplit(extra) {
     assert.ok(els.status.textContent.includes("re-verified"), "C5: clear error shown, got: " + els.status.textContent);
     console.log("  C5 PASS: split execution blocked by failed aggregator re-verification (no sends)");
 
-    // C passes -> split executes to the stored address
+    // C passes -> split executes to the SHARED address (stored entry stays ignored)
     setupSplit();
     aggRouterRet = ROUTER;
     sentTxs.length = 0;
     await app.onSwap();
-    const splitSend = sentTxs.find((tx) => (tx.to || "").toLowerCase() === FAKE_AGG);
-    assert.ok(splitSend, "C6/A4: verified stored aggregator receives the split send");
-    console.log("  C6/A4 PASS: guard fine + re-verification ok -> split sent to the stored aggregator");
+    const splitSend = sentTxs.find((tx) => (tx.to || "").toLowerCase() === SHARED_AGG);
+    assert.ok(splitSend, "C6/A4: verified shared aggregator receives the split send");
+    assert.ok(!sentTxs.some((tx) => (tx.to || "").toLowerCase() === FAKE_AGG), "C6/A4: nothing is sent to the ignored stored address");
+    console.log("  C6/A4 PASS: guard fine + re-verification ok -> split sent to the shared aggregator");
   }
 
   /* ================= B: 未監査警告 ================= */
