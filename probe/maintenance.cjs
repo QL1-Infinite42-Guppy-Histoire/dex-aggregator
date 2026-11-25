@@ -17,7 +17,7 @@ const fs = require("fs");
 const vm = require("vm");
 const assert = require("assert");
 
-const IDS = ["chainInf", "chainQl1", "chainTest", "testnetBanner", "chainNote", "connectBtn", "connectBtnMain", "fromTokenBadge", "toTokenBadge", "xFromTokenBadge", "xToTokenBadge", "accountLine", "status", "fromToken", "toToken", "fromBalance", "toBalance", "amountIn", "flipBtn", "quoteBtn", "planArea", "routeList", "splitNote", "rateLine", "rateInvertBtn", "gasLine", "receiveOut", "minLine", "swapBtn", "txResult", "slipCustom", "caInput", "caAddBtn", "caMsg", "modeSame", "modeCross", "modeNote", "swapPanel", "caPanel", "crossPanel", "xSrcInf", "xSrcQl1", "xDstLabel", "xFromToken", "xToToken", "xFromBalance", "xAmount", "xQuoteBtn", "xStatus", "xCandidates", "xFlow", "xAbandon", "arbPanel", "arbAmount", "arbScanBtn", "arbStatus", "arbBoard", "arbTestnetNote", "langSel", "aggArea", "themeToggle"];
+const IDS = ["chainInf", "chainQl1", "chainTest", "testnetBanner", "chainNote", "connectBtn", "connectBtnMain", "connDlg", "connTitle", "connAddr", "disconnectBtn", "connClose", "fromTokenBadge", "toTokenBadge", "xFromTokenBadge", "xToTokenBadge", "accountLine", "status", "fromToken", "toToken", "fromBalance", "toBalance", "amountIn", "flipBtn", "quoteBtn", "planArea", "routeList", "splitNote", "rateLine", "rateInvertBtn", "gasLine", "receiveOut", "minLine", "swapBtn", "txResult", "slipCustom", "caInput", "caAddBtn", "caMsg", "modeSame", "modeCross", "modeNote", "swapPanel", "caPanel", "crossPanel", "xSrcInf", "xSrcQl1", "xDstLabel", "xFromToken", "xToToken", "xFromBalance", "xAmount", "xQuoteBtn", "xStatus", "xCandidates", "xFlow", "xAbandon", "arbPanel", "arbAmount", "arbScanBtn", "arbStatus", "arbBoard", "arbTestnetNote", "langSel", "aggArea", "themeToggle"];
 
 const CAUTION_BANNER = {
   en: "Usable, but still under maintenance — bugs may occur.",
@@ -68,7 +68,7 @@ function loadPage(lang) {
   assert.ok(/const MAINTENANCE_MODE = false;/.test(appSrc), "MAINTENANCE_MODE = false present (maintenance ended 2026-11-19)");
   assert.ok(!/const MAINTENANCE_MODE = true;/.test(appSrc), "flag must not be true in the post-maintenance state");
   assert.ok(/function applyMaintenanceMode\(\) \{\n  if \(!MAINTENANCE_MODE\) return;/.test(appSrc), "applyMaintenanceMode still keys off the flag (mechanism retained)");
-  const gated = ["onQuote", "onConnect", "onDeployAggregator", "onSwap", "onXQuote", "startXFlow", "doXSplitStep1", "doXSplitStep2", "checkSplitArrival", "doXSplitStep4", "doXStep1", "doXStep2", "checkArrival", "doXStep4Legacy", "doXStep4", "onXAbandon", "onArbScan", "startArbFlow", "startReturnFlow", "onCaAdd"];
+  const gated = ["onQuote", "onConnect", "onDeployAggregator", "onSwap", "onXQuote", "startXFlow", "doXSplitStep1", "doXSplitStep2", "checkSplitArrival", "doXSplitStep4", "doXStep1", "doXStep2", "checkArrival", "doXStep4Legacy", "doXStep4", "onXAbandon", "onArbScan", "startArbFlow", "startReturnFlow", "onCaAdd", "openConnDialog", "onConnClose", "onDisconnect"];
   for (const fn of gated) {
     const re = new RegExp("(?:async )?function " + fn + "\\([^)]*\\) \\{\\n  if \\(MAINTENANCE_MODE\\) return;");
     assert.ok(re.test(appSrc), "handler still carries the maintenance guard (mechanism retained): " + fn);
@@ -87,7 +87,7 @@ function loadPage(lang) {
     assert.strictEqual((html.match(/id="connectBtnMain"/g) || []).length, 1, name + ": one main-area connect button");
     assert.ok(html.includes('id="connectBtnMain" type="button" class="big connect-cta">' + cta + "</button>"), name + ": main connect CTA label");
     assert.ok(html.indexOf('id="connectBtn"') < html.indexOf('id="themeToggle"'), name + ": header connect sits in the top actions row");
-    assert.ok(html.includes('src="app.js?v=16"'), name + ": app.js cache-buster bumped to v=16");
+    assert.ok(html.includes('src="app.js?v=17"'), name + ": app.js cache-buster bumped to v=17");
   }
   console.log("static: EN/JA pages free of any maintenance wording/banner + both connect buttons + cache-buster OK");
 
@@ -96,7 +96,7 @@ function loadPage(lang) {
     assert.strictEqual(app.MAINTENANCE_MODE, false, lang + ": exported flag is false");
 
     /* initApp が走っても applyMaintenanceMode は即 return し、部品は有効なまま */
-    const mustBeEnabled = ["connectBtn", "connectBtnMain", "quoteBtn", "fromToken", "toToken", "amountIn", "slipCustom", "caInput", "caAddBtn", "xQuoteBtn", "xAmount", "xFromToken", "xToToken", "arbScanBtn", "arbAmount", "chainInf", "chainQl1", "modeSame", "modeCross", "xAbandon", "flipBtn", "langSel"];
+    const mustBeEnabled = ["connectBtn", "connectBtnMain", "disconnectBtn", "connClose", "quoteBtn", "fromToken", "toToken", "amountIn", "slipCustom", "caInput", "caAddBtn", "xQuoteBtn", "xAmount", "xFromToken", "xToToken", "arbScanBtn", "arbAmount", "chainInf", "chainQl1", "modeSame", "modeCross", "xAbandon", "flipBtn", "langSel"];
     for (const id of mustBeEnabled) assert.strictEqual(els[id].disabled, false, lang + ": " + id + " NOT disabled after init");
     /* swapBtn はメンテナンスではなく通常ロジック (未接続なので updateSwapBtn が
        無効化) で disabled になるのが v7.2 の正常挙動 */

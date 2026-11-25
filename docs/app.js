@@ -72,6 +72,7 @@ const STR = {
     accountLine: (a, label) => "接続中: " + a + "（" + label + "）",
     accountLineSwitch: (a, label) => "接続中: " + a + "（" + label + " に切り替えるには交換時に自動で切り替わります）",
     notConnected: "未接続（見積もりだけなら接続なしで使えます）",
+    connectedTitle: "ウォレット接続中", disconnectBtn: "接続を解除", statusDisconnected: "ウォレットの接続を解除しました",
     noteInfinite: "42 Chain（チェーンID 421018）／ DEX: Don't Panic（Nutri-Matic）",
     noteQl1: "QL1（チェーンID 766）／ DEX: QomSwap",
     noteTestnet: "42 Testnet（チェーンID 421018001）／ DEX: Don't Panic 系テストネット（ルーターは復旧済みアドレス）",
@@ -219,6 +220,7 @@ const STR = {
     accountLine: (a, label) => "Connected: " + a + " (" + label + ")",
     accountLineSwitch: (a, label) => "Connected: " + a + " (will switch to " + label + " automatically at swap time)",
     notConnected: "Not connected (quotes work without a wallet)",
+    connectedTitle: "Wallet connected", disconnectBtn: "Disconnect", statusDisconnected: "Wallet disconnected",
     noteInfinite: "42 Chain (chain ID 421018) / DEX: Don't Panic (Nutri-Matic)",
     noteQl1: "QL1 (chain ID 766) / DEX: QomSwap",
     noteTestnet: "42 Testnet (chain ID 421018001) / DEX: Don't Panic-style testnet (router address recovered and verified on-chain)",
@@ -2083,7 +2085,11 @@ async function ensureChain(chainObj) {
 }
 function shortAddr(a) { return a.slice(0, 6) + "…" + a.slice(-4); }
 async function onConnect() {
-  if (MAINTENANCE_MODE) return;  const e = eth();
+  if (MAINTENANCE_MODE) return;
+  /* 接続済みなら再接続フローは回さず、接続ダイアログを開く
+     (QOM DEX と同じ仕様に統一、2026-11-25)。 */
+  if (state.account) { openConnDialog(); return; }
+  const e = eth();
   if (!e) { setStatus(t("errNoMetaMask"), true); return; }
   try {
     const accts = await e.request({ method: "eth_requestAccounts" });
@@ -2097,6 +2103,54 @@ async function onConnect() {
     renderAggArea();
     setStatus(t("statusConnected"));
   } catch (err) { setStatus(t("statusConnectFail") + friendlyErr(err), true); }
+}
+/* ---------- 接続ダイアログ / 切断 (QOM DEX と仕様統一、2026-11-25) ---------- */
+function openConnDialog() {
+  if (MAINTENANCE_MODE) return;
+  if (!state.account) return;
+  const d = $("connDlg"); if (!d) return;
+  const addr = $("connAddr"); if (addr) addr.textContent = state.account;
+  const title = $("connTitle"); if (title) title.textContent = t("connectedTitle");
+  const disc = $("disconnectBtn"); if (disc) disc.textContent = t("disconnectBtn");
+  if (typeof d.showModal === "function") { if (!d.open) d.showModal(); }
+  else if (d.setAttribute) d.setAttribute("open", "");
+}
+function closeConnDialog() {
+  const d = $("connDlg"); if (!d) return;
+  if (typeof d.close === "function") d.close();
+  else if (d.removeAttribute) d.removeAttribute("open");
+}
+function onConnClose() {
+  if (MAINTENANCE_MODE) return;
+  closeConnDialog();
+}
+/* 切断後の表示を、未接続時の既存レンダリングにそろえる
+   (accountsChanged でアカウントが消えた場合と共通の更新一式)。 */
+function renderDisconnected() {
+  const al = $("accountLine");
+  if (al) al.textContent = t("notConnected");
+  updateReceive();
+  renderBalances();
+  renderAggArea();
+  if (state.mode === "cross") { renderXFlow(); refreshXBalance(); }
+}
+async function onDisconnect() {
+  if (MAINTENANCE_MODE) return;
+  const e = eth();
+  if (e) {
+    /* ウォレットが対応していれば、このサイトへの接続許可そのものを
+       取り消す (MetaMask: wallet_revokePermissions)。取り消しが効けば
+       再読み込みしても自動復帰しない (本サイトは元々ロード時に自動
+       接続しない)。非対応のウォレットでは失敗を無視してサイト側の
+       切断だけを行う (QOM DEX と同じ)。 */
+    try { await e.request({ method: "wallet_revokePermissions", params: [{ eth_accounts: {} }] }); } catch (err) { /* revoke unsupported: local disconnect only */ }
+  }
+  /* 保存済みフロー (dexagg_xflow_v1) には触らない — アカウント束縛の
+     既存チェックが再接続時にそのまま効く。 */
+  state.account = null;
+  closeConnDialog();
+  renderDisconnected();
+  setStatus(t("statusDisconnected"));
 }
 function friendlyErr(err) {
   if (!err) return t("errUnknown");
@@ -3353,6 +3407,8 @@ function initApp() {
   if ($("chainTest")) $("chainTest").addEventListener("click", () => setChain("testnet"));
   $("connectBtn").addEventListener("click", onConnect);
   if ($("connectBtnMain")) $("connectBtnMain").addEventListener("click", () => { const b = $("connectBtn"); if (b && b.click) b.click(); });
+  if ($("connClose")) $("connClose").addEventListener("click", onConnClose);
+  if ($("disconnectBtn")) $("disconnectBtn").addEventListener("click", onDisconnect);
   $("quoteBtn").addEventListener("click", onQuote);
   $("swapBtn").addEventListener("click", onSwap);
   $("flipBtn").addEventListener("click", () => {
@@ -3399,8 +3455,11 @@ function initApp() {
     const e = eth();
     if (e && typeof e.on === "function") e.on("accountsChanged", (accts) => {
       state.account = accts && accts[0] ? String(accts[0]).toLowerCase() : null;
+      /* 空配列 (切断・権限取り消し) は renderDisconnected で綺麗に
+         未接続状態へ落とす (手動切断と共通)。 */
+      if (!state.account) { renderDisconnected(); return; }
       const al = $("accountLine");
-      if (al) al.textContent = state.account ? t("accountLine", shortAddr(state.account), chain().label) : "";
+      if (al) al.textContent = t("accountLine", shortAddr(state.account), chain().label);
       updateReceive();
       refreshBalances();
       if (state.mode === "cross") { renderXFlow(); refreshXBalance(); }
@@ -3423,5 +3482,6 @@ if (typeof module !== "undefined" && module.exports) {
     qomTokenId, fetchBridgeFeeInQom, quoteArbRoute, quoteArbBoard, renderArbBoard, onArbScan, startArbFlow, startReturnFlow,
     evaluateCrossSplitNet, buildDeployTx, decodeSplitTxData, SPLIT_BYTECODE, storedAggregator, setStoredAggregator, effectiveAggregator, aggregatorSource, renderAggArea, onDeployAggregator,
     langTargetFor, initLangSelector, syncTokenBadges, txLinkHtml, clearXQuote,
-    verifyStoredAggregator, ensureFlowAccount, xFlowAccountBlocked, onSwap };
+    verifyStoredAggregator, ensureFlowAccount, xFlowAccountBlocked, onSwap,
+    openConnDialog, onConnClose, onDisconnect, renderDisconnected };
 }

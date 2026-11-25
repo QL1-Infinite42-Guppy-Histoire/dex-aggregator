@@ -278,3 +278,11 @@ body.maintenance .panel { opacity: .94; }
   #caPanel { grid-column: 2; }
   .layout > section.panel:last-of-type { grid-column: 1 / -1; }
 }
+/* 接続ダイアログ (QOM DEX と仕様統一、2026-11-25) */
+dialog#connDlg { border: 1px solid var(--line-d); background: var(--card-gradient); color: var(--text); padding: 20px; width: min(420px, 92vw); box-shadow: var(--shadow-card); clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px); }
+dialog#connDlg::backdrop { background: rgba(2,8,20,.55); }
+dialog#connDlg h3 { margin: 0 0 10px; font-size: 17px; letter-spacing: .06em; text-transform: uppercase; }
+.conn-addr { word-break: break-all; font-size: 13.5px; margin: 0 0 16px; color: var(--muted); }
+.conn-row { display: flex; gap: 8px; align-items: center; }
+button.danger { background: linear-gradient(180deg, #f87171, var(--red) 55%, var(--red-d)); color: #fff; border-color: var(--red-d); box-shadow: 0 5px 0 var(--red-d), 0 10px 18px rgba(220,38,38,.35), inset 0 1px 0 rgba(255,255,255,.45); }
+button.danger:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 1px 0 var(--red-d), 0 4px 8px rgba(220,38,38,.3), inset 0 1px 0 rgba(255,255,255,.3); }

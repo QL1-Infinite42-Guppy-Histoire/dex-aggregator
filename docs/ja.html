@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Zen+Kaku+Gothic+New:wght@500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=7">
+<link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
 <header>
@@ -183,6 +183,15 @@
   <p>v7.2 ／ データ取得元：42 Chain RPC / QL1 RPC / 42 Testnet RPC（プールを直接読取）。ソースコードは MIT ライセンスで公開しています。</p>
 </footer>
 
+<dialog id="connDlg">
+  <h3 id="connTitle">ウォレット接続中</h3>
+  <p class="conn-addr" id="connAddr">—</p>
+  <div class="conn-row">
+    <button id="disconnectBtn" type="button" class="danger">接続を解除</button>
+    <button id="connClose" type="button" aria-label="閉じる">✕</button>
+  </div>
+</dialog>
+
 <script>
 (function(){
   var btn=document.getElementById('themeToggle'); if(!btn) return;
@@ -192,6 +201,6 @@
   btn.addEventListener('click',function(){ var next=document.documentElement.dataset.theme==='dark'?'light':'dark'; document.documentElement.dataset.theme=next; try{localStorage.setItem('guppy-theme',next);}catch(e){} label(); });
 })();
 </script>
-<script src="app.js?v=16"></script>
+<script src="app.js?v=17"></script>
 </body>
 </html>
