@@ -17,9 +17,10 @@
    全て PASS で exit 0、それ以外は exit 1 (理由を表示)。
 
    期待値は、サイト内蔵の作成バイトコード (docs/app.js SPLIT_BYTECODE、
-   contracts/SplitSwap.json と同一) をローカル paris EVM にデプロイして
-   eth_getCode で読み取った実物。経緯と既知のメタデータハッシュ差分は
-   baseline JSON の derivation / knownDiscrepancy_metadataHashOnly を参照。 */
+   contracts/SplitSwap.json と同一。2026-11-25 に固定レシピでソースから
+   再生成済み) をローカル paris EVM にデプロイして eth_getCode で読み
+   取った実物。経緯は baseline JSON の derivation /
+   regeneration_2026_11_25 を参照。 */
 const fs = require("fs");
 const path = require("path");
 global.localStorage = { _s: {}, getItem(k) { return k in this._s ? this._s[k] : null; }, setItem(k, v) { this._s[k] = String(v); }, removeItem(k) { delete this._s[k]; } };
