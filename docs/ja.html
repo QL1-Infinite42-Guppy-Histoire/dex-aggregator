@@ -14,7 +14,7 @@
 <body>
 <header>
   <div class="top-actions"><div class="lang-switch"><label>言語 / Language <select id="langSel"><option value="en">English</option><option value="ja" selected>日本語</option></select></label></div><button id="connectBtn" type="button" class="header-connect">ウォレットを接続（MetaMask）</button><button id="themeToggle" type="button" class="theme-toggle" aria-label="背景テーマ切替">🌙 黒背景</button></div>
-  <h1>DEXアグリゲーター（42 Chain / QL1 / Testnet）</h1>
+  <h1>DEXアグリゲーター（42 Chain / QL1 / 42 Testnet）</h1>
   <p class="sub">いちばん多く受け取れるルートを、全部のプールから探します。</p>
   <p class="sub small">「ルート」＝交換の通り道です。たとえば USDT → 42 を直接交換する道と、USDT → FISH → 42 のように経由する道があり、金額によって多い方が変わります。さらに、金額を複数のルートに分ける「分割」も含めて全部見積もりして並べます（1inchと同じ考え方）。</p>
 </header>
@@ -122,7 +122,7 @@
   <div id="xCandidates" class="route-list"></div>
   <div id="xFlow"></div>
   <button id="xAbandon" type="button" style="display:none;margin-top:10px">やめる（進み具合を消す）</button>
-  <p class="count">中継に使えるのはブリッジの実績を確認できたトークンだけです（QOM / BABY / CAW / FATHER / HAWK / KET / O / OSAK。ただし 42 Chain → QL1 の OSAK は送信実績が確認できていないため使えません）。<b>ブリッジがつながっているトークンは、どれでも中継に使えます</b>（仕組みはトークンごとに違いません）。中継ごとに交換の通り道の組み合わせ（全体ルート）を全部並べるので、遠回りなルートがなぜ多いのか・単純なルートだとどれだけ減るのかも、そのまま見て選べます。全体ルート同士で金額を分ける「分割」も見積もりし、単一ルートより多いときだけ分割プランのカードを出します（ブリッジはパートごとに別送信になるので、42 Chain から送る場合のメッセージ代はパートの数だけかかります）。ブリッジ手数料は0です。42 Chain から送るときはメッセージ代（約2.94 [42]、送信時に再取得）が別にかかります。QL1 から送るときは実測で0です。到着は数分かかることがあります（実測では約5分の例あり）。</p>
+  <p class="count">中継に使えるのはブリッジの実績を確認できたトークンだけです（QOM / BABY / CAW / FATHER / HAWK / KET / O / OSAK。ただし 42 Chain → QL1 の OSAK は送信実績が確認できていないため使えません）。<b>ブリッジがつながっているトークンは、どれでも中継に使えます</b>（仕組みはトークンごとに違いません）。中継ごとに交換の通り道の組み合わせ（全体ルート）を全部並べるので、遠回りなルートがなぜ多いのか・単純なルートだとどれだけ減るのかも、そのまま見て選べます。全体ルート同士で金額を分ける「分割」も見積もりし、単一ルートより多いときだけ分割プランのカードを出します（ブリッジはパートごとに別送信になるので、42 Chain から送る場合のメッセージ代はパートの数だけかかります）。ブリッジ手数料は0です。42 Chain から送るときはメッセージ代（2026-11-25 の再実測で約4.4 [42]。ガス価格で変動し、送信時に再取得）が別にかかります。QL1 から送るときは実測で0です。到着は数分かかることがあります（実測では約5分の例あり）。</p>
 </section>
 
 <section class="panel" id="arbPanel">
@@ -137,7 +137,7 @@
     <button type="button" class="chip arb-chip" data-amt="1000000000">10億 QOM</button>
     <button type="button" class="chip arb-chip" data-amt="100000000000">1000億 QOM</button>
   </div>
-  <p class="count">金額の目安について：42 Chain 発のブリッジにはメッセージ代（約2.94 [42]、QOM換算で約34.5億 QOM）が固定でかかるため、10億 QOM 以下では 42 Chain 発のルートは手数料だけでマイナスになります。初期値は手数料が約3.5%に収まる 1000億 QOM です。逆に大きすぎる金額では、プールが薄くて値段が大きくズレてマイナスになります。小さい金額では QL1 発（手数料0）の小口の価格差が見えることがあります。</p>
+  <p class="count">金額の目安について：42 Chain 発のブリッジにはメッセージ代（2026-11-25 の再実測で約4.4 [42]、QOM換算で約50億 QOM。ガス価格で変動します）が固定でかかるため、10億 QOM 以下では 42 Chain 発のルートは手数料だけでマイナスになります。初期値は手数料が約5%に収まる 1000億 QOM です。逆に大きすぎる金額では、プールが薄くて値段が大きくズレてマイナスになります。小さい金額では QL1 発（手数料0）の小口の価格差が見えることがあります。</p>
   <button id="arbScanBtn" type="button" class="big">価格差を調べる</button>
   <p id="arbStatus" class="status"></p>
   <div id="arbBoard" class="route-list"></div>
@@ -180,7 +180,7 @@
 
 </main>
 <footer>
-  <p>v7.2 ／ データ取得元：42 Chain RPC / QL1 RPC / 42 Testnet RPC（プールを直接読取）。ソースコードは MIT ライセンスで公開しています。</p>
+  <p>v7.2 ／ データ取得元：42 Chain RPC / QL1 RPC / 42 Testnet RPC（プールを直接読取）。ソースコードは MIT ライセンスで公開しています。コミュニティによる開発で、各チェーン／DEX の公式プロダクトではありません。</p>
 </footer>
 
 <dialog id="connDlg">
@@ -201,6 +201,6 @@
   btn.addEventListener('click',function(){ var next=document.documentElement.dataset.theme==='dark'?'light':'dark'; document.documentElement.dataset.theme=next; try{localStorage.setItem('guppy-theme',next);}catch(e){} label(); });
 })();
 </script>
-<script src="app.js?v=20"></script>
+<script src="app.js?v=21"></script>
 </body>
 </html>

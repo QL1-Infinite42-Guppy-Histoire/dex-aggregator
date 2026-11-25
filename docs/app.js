@@ -1,5 +1,5 @@
 "use strict";
-/* DEXアグリゲーター v6 (42 Chain / QL1 / 42 Testnet)
+/* DEXアグリゲーター (42 Chain / QL1 / 42 Testnet)
    1inch風: 直接・1つ経由・2つ経由の全ルートを getAmountsOut で比較し、
    さらに上位ルートへの「分割」配分も評価して一番多いプランを提示する。
    分割の1tx実行には専用コントラクト (contracts/SplitSwap.sol) が必要。
@@ -24,9 +24,9 @@ const WQOM = "0xa26dfbf98dd1a32fae56a3d2b2d60a8a41b0bdf0";
 
 /* ---------- メンテナンスモード (2026-11-17〜) ----------
    true のあいだは見積もり・接続・送信など取引系の入口をすべて止める。
-   2026-11-19: ユーザー指示で false に戻して再開した。ただし「完全復旧」
-   ではなく、バナーは各言語ページの静的 HTML 側で注意書き
-   (使用可能だがメンテナンス中につき不具合の可能性あり) に差し替えてある。
+   2026-11-19: ユーザー指示で false に戻して再開し、同日中に注意書き
+   バナーも含めてメンテナンス文言は各言語ページから全て撤去した
+   (現在のページ側にバナーや文言は存在しない)。
    再び止めるときはこの値を true に戻し、バナーも利用不可の文面に戻すこと
    (probe/maintenance.cjs がフラグとバナーの不整合を検出する)。 */
 const MAINTENANCE_MODE = false;
@@ -429,7 +429,8 @@ const CHAINS = {
    - Infinite->QL1: QOM/BABY/CAW/FATHER/HAWK/O 各2件・KET 1件で delivered==true を確認。
      OSAK は Infinite 側 BridgeRouter の全履歴に transferRemote が 0 件 (管理txのみ) のため、この向きは未証明として無効化。
    - QL1 側の送信は全サンプル msg.value = 0 (ネイティブのガス支払い不要)。Infinite 側は BridgeRouter の
-     quoteNative(766) の totalNative をそのまま払う (実測 約2.94 [42]、送信時に再取得)。
+     quoteNative(766) の totalNative をそのまま払う (ガス価格で変動: 2026-11-06 実測 約2.94 [42]、
+     2026-11-25 再実測 約4.37 [42]。送信時に再取得するので見積もり表示は常に実額)。
    - ブリッジ手数料は全ペア 0 (quoteBridge の fee=0 を全ルーターで確認)。 */
 const BRIDGE_PAIRS = [
   { sym: "QOM",    infId: "qom",    ql1Id: "wqom",  br: "0x049a78fe311cf1c23f09cdd4f12420ffc917c8db", ql1Router: "0x30da1e7c8de5fa75b593002e0b2d2910ffcadcb6", enabledFromQl1: true, enabledFromInf: true },
@@ -1793,13 +1794,41 @@ async function quoteArbBoard(startRaw) {
 /* ---------- v3 cross-chain: guided flow state (localStorage persistence) ---------- */
 const XFLOW_KEY = "dexagg_xflow_v1";
 function serializeXFlow(flow) { return flow ? JSON.stringify(flow) : null; }
+/* 保存フローの復元検証 (監査 2026-11-25)。描画・実行側が無条件に
+   BigInt 化する数値フィールド (amountIn / bridgeOut / totalEst など) が
+   欠けたフローを復元すると、クロス画面を開いた時点で例外になって案内が
+   壊れる。実フロー (v5 単一・旧 v4 形式・v2 分割) が必ず持つ形だけを
+   通し、壊れた保存は破棄する (JSON 破損時の従来動作と同じ扱い)。 */
+const XFLOW_NUM_RE = /^\d+$/;
+function xflowNumOk(v) { return typeof v === "string" && XFLOW_NUM_RE.test(v); }
+function xflowOptNumOk(v) { return v == null || xflowNumOk(v); }
+function xflowPathOk(v) { return v == null || (Array.isArray(v) && v.length >= 2 && v.every((a) => typeof a === "string" && /^0x[0-9a-fA-F]{40}$/.test(a))); }
 function restoreXFlow(json) {
   if (!json) return null;
   try {
     const f = JSON.parse(json);
-    if (!f || !f.srcKey || !f.dstKey) return null;
-    if (f.v === 2 && f.kind === "split" && Array.isArray(f.parts) && f.parts.length >= 2) return f;
-    if (f.v !== 1 || !f.sym) return null;
+    if (!f || typeof f !== "object") return null;
+    if (!CHAINS[f.srcKey] || !CHAINS[f.dstKey] || f.srcKey === f.dstKey) return null;
+    if (typeof f.fromId !== "string" || typeof f.toId !== "string") return null;
+    if (f.v === 2 && f.kind === "split") {
+      if (!Array.isArray(f.parts) || f.parts.length < 2) return null;
+      if (!xflowNumOk(f.amountIn) || !xflowNumOk(f.totalEst)) return null;
+      for (const p of f.parts) {
+        if (!p || typeof p !== "object") return null;
+        if (!BRIDGE_PAIRS.some((q) => q.sym === p.sym)) return null;
+        if (typeof p.tSrcId !== "string" || !xflowNumOk(p.amountIn)) return null;
+        if (!xflowOptNumOk(p.received) || !xflowOptNumOk(p.bridgedAmount) || !xflowOptNumOk(p.arrivedAmt) || !xflowOptNumOk(p.estLeg1Out) || !xflowOptNumOk(p.estFinalOut) || !xflowOptNumOk(p.nativeFee)) return null;
+        if (!xflowPathOk(p.leg1Path) || !xflowPathOk(p.leg2Path)) return null;
+      }
+      return f;
+    }
+    if (f.v !== 1) return null;
+    if (!BRIDGE_PAIRS.some((q) => q.sym === f.sym)) return null;
+    if (typeof f.tSrcId !== "string") return null;
+    if (!xflowNumOk(f.amountIn) || !xflowNumOk(f.bridgeOut)) return null;
+    if (!xflowOptNumOk(f.swap1Out) || !xflowOptNumOk(f.arrived) || !xflowOptNumOk(f.finalEst) || !xflowOptNumOk(f.nativeFee) || !xflowOptNumOk(f.baselineT) || !xflowOptNumOk(f.baselineDst)) return null;
+    if (!xflowPathOk(f.swap1Path) || !xflowPathOk(f.swap2Path)) return null;
+    if (!(f.step === "done" || (Number.isInteger(f.step) && f.step >= 1 && f.step <= 4))) return null;
     return f;
   } catch (e) { return null; }
 }
@@ -1845,10 +1874,22 @@ async function fetchTokenMeta(chainObj, address) {
 }
 
 /* ---------- storage ---------- */
+/* 保存済みカスタムトークンの検証 (監査 2026-11-25)。localStorage は
+   同じオリジンの他ページや手作業でも書き換わりうるため、形の壊れた
+   エントリ (null・住所なし・decimals 異常) が1件あるだけで初期化が
+   止まってページ全体が使えなくなることがないよう、読み取り時に検証
+   して不正なものを捨てる。基準は追加時の検証 (fetchTokenMeta) と同じ。 */
+function validCustomToken(tk) {
+  return !!tk && typeof tk === "object"
+    && typeof tk.id === "string" && tk.id.length > 0
+    && typeof tk.symbol === "string" && tk.symbol.length > 0
+    && typeof tk.address === "string" && /^0x[0-9a-fA-F]{40}$/.test(tk.address)
+    && Number.isInteger(tk.decimals) && tk.decimals >= 0 && tk.decimals <= 36;
+}
 function loadLocal() {
   try {
     const c = JSON.parse(localStorage.getItem("dexagg_custom_v1") || "{}");
-    for (const k of ["infinite", "ql1", "testnet"]) if (Array.isArray(c[k])) state.custom[k] = c[k];
+    for (const k of ["infinite", "ql1", "testnet"]) if (Array.isArray(c[k])) state.custom[k] = c[k].filter(validCustomToken);
   } catch (e) { /* ignore */ }
 }
 function saveLocal() {
