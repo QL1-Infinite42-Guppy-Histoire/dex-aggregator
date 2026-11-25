@@ -127,7 +127,7 @@
 
 <section class="panel" id="arbPanel">
   <h2>価格差（裁定）</h2>
-  <p class="count">QL1 と 42 Chain の間で同じトークンの値段がズレていると、「安い方で買って、ブリッジして、高い方で売る」ことで差が取れます（裁定。取引されると価格差は縮んでいきます）。このボードは、基準通貨 QOM で始めて QOM で終わるルートを、全トークン×両方向で<b>実際のルート見積もり</b>（各プールの <code>getAmountsOut</code>）で計算します。目安価格だけの比較は、薄いプールでは嘘になるため使いません。</p>
+  <p class="count">QL1 と 42 Chain の間で同じトークンの値段がズレていると、「安い方で買って、ブリッジして、高い方で売る」ことで差が取れます（裁定。取引されると価格差は縮んでいきます）。このボードは、基準通貨 QOM で始めて QOM で終わるルートを、全トークン×両方向で<b>実際のルート見積もり</b>（各プールの <code>getAmountsOut</code>）で計算します。目安価格だけの比較は、薄いプールではうそになるため使いません。</p>
   <p id="arbTestnetNote" class="count" style="display:none">テストネットでは使えません（QL1のテストネットブリッジは確認できていません）。本番チェーンを選んでください。</p>
   <label class="fld">金額（QOM）
     <input id="arbAmount" type="text" inputmode="decimal" autocomplete="off" value="100000000000" aria-label="金額（QOM）">
@@ -163,7 +163,7 @@
 <section class="panel">
   <h2>仕組みと正直な限界</h2>
   <ul class="notes">
-    <li>見積もりは DEX ルーターの <code>getAmountsOut</code> を、直接・1つ経由・2つ経由の全ルートで実際に叩いた結果です。推測の価格ではありません。</li>
+    <li>見積もりは DEX ルーターの <code>getAmountsOut</code> を、直接・1つ経由・2つ経由の全ルートで実際にたたいた結果です。推測の価格ではありません。</li>
     <li>上位ルートへの分割（90/10、80/20、…、50/50 や3ルート分割）も同じ方法で見積もりし、単一ルートより多いときは「分割プラン（おすすめ）」として出します。</li>
     <li><b>分割の実行には専用のアグリゲーター・コントラクトが必要です。</b>コントラクト（SplitSwap）はこのサイトのリポジトリで公開していて、チェーンごとに自分のウォレットからこの画面でデプロイできます（v7）。デプロイした住所はこのブラウザに保存され、それ以降は分割プランをそのまま実行できます。デプロイしていないチェーンでは分割は<b>見積もりのみ</b>で、実行は単一ルートです。テストネットでも同じ方法でデプロイできますが、ガス代に TEST42 が必要です（公開ファウセットは見つかっていません）。各レッグには最低受取量も入ります（v7）。クロスチェーンの分割は、追加のブリッジ代を引いても単一ベストに勝つときだけプランを出します（v6.5）。</li>
     <li>テストネットの DEX ルーターは、公開記録のアドレスが1文字多く壊れていたため、候補を全部ライブで検証して復旧したアドレスを使っています。トークン一覧もテストネットの実ペアから作っています。</li>
@@ -201,6 +201,6 @@
   btn.addEventListener('click',function(){ var next=document.documentElement.dataset.theme==='dark'?'light':'dark'; document.documentElement.dataset.theme=next; try{localStorage.setItem('guppy-theme',next);}catch(e){} label(); });
 })();
 </script>
-<script src="app.js?v=19"></script>
+<script src="app.js?v=20"></script>
 </body>
 </html>
