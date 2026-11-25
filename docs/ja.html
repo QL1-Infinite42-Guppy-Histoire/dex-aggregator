@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Zen+Kaku+Gothic+New:wght@500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=9">
 </head>
 <body>
 <header>
@@ -25,9 +25,9 @@
 <section class="panel">
   <h2>チェーン</h2>
   <div class="chain-row">
-    <button id="chainInf" type="button" class="chain-btn active">42 Chain</button>
-    <button id="chainQl1" type="button" class="chain-btn">QL1</button>
-    <button id="chainTest" type="button" class="chain-btn">42 Testnet</button>
+    <button id="chainInf" type="button" class="chain-btn active"><img class="chain-mark sq" src="img/chain-42.jpg" alt="">42 Chain</button>
+    <button id="chainQl1" type="button" class="chain-btn"><img class="chain-mark" src="img/chain-ql1.jpg" alt="">QL1</button>
+    <button id="chainTest" type="button" class="chain-btn"><img class="chain-mark sq" src="img/chain-42.jpg" alt="">42 Testnet</button>
   </div>
   <p id="chainNote" class="count"></p>
   <div class="chain-row" style="margin-top:8px">
@@ -102,9 +102,9 @@
   <div class="fld">
     <span>送る元チェーン → 届くチェーン</span>
     <div class="chain-row" style="margin-top:6px">
-      <button id="xSrcQl1" type="button" class="chain-btn active">QL1 から</button>
-      <button id="xSrcInf" type="button" class="chain-btn">42 Chain から</button>
-      <span class="count">→ <b id="xDstLabel">42 Chain</b></span>
+      <button id="xSrcQl1" type="button" class="chain-btn active"><img class="chain-mark" src="img/chain-ql1.jpg" alt="">QL1 から</button>
+      <button id="xSrcInf" type="button" class="chain-btn"><img class="chain-mark sq" src="img/chain-42.jpg" alt="">42 Chain から</button>
+      <span class="count">→ <img id="xDstMark" class="chain-mark sq" src="img/chain-42.jpg" alt=""><b id="xDstLabel">42 Chain</b></span>
     </div>
   </div>
   <label class="fld">出すトークン（送る元チェーンのもの）
@@ -201,6 +201,6 @@
   btn.addEventListener('click',function(){ var next=document.documentElement.dataset.theme==='dark'?'light':'dark'; document.documentElement.dataset.theme=next; try{localStorage.setItem('guppy-theme',next);}catch(e){} label(); });
 })();
 </script>
-<script src="app.js?v=18"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>

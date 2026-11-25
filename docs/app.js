@@ -2371,6 +2371,13 @@ function setXSrc(srcKey) {
   if ($("xSrcInf")) $("xSrcInf").classList.toggle("active", srcKey === "infinite");
   if ($("xSrcQl1")) $("xSrcQl1").classList.toggle("active", srcKey === "ql1");
   if ($("xDstLabel")) $("xDstLabel").textContent = CHAINS[xDstKey()].label;
+  /* 宛先チェーンマークもラベルに合わせて切り替える (表示のみ、2026-11-25) */
+  const dm = $("xDstMark");
+  if (dm) {
+    const isQl1 = xDstKey() === "ql1";
+    dm.src = isQl1 ? "img/chain-ql1.jpg" : "img/chain-42.jpg";
+    dm.className = isQl1 ? "chain-mark" : "chain-mark sq";
+  }
   fillXSelects();
   clearXQuote();
   setChain(srcKey);
@@ -3219,6 +3226,13 @@ function onXAbandon() {
 
 /* ================= v4 arbitrage board UI ================= */
 function setArbStatus(msg, isErr) { const el = $("arbStatus"); if (el) { el.textContent = msg || ""; el.style.color = isErr ? "#ff9d9d" : ""; } }
+/* チェーンマーク (小さいロゴ画像) の HTML。QL1 は円形、42 は角丸四角
+   (表示のみ、2026-11-25)。 */
+function chainMarkHtml(key) {
+  return key === "ql1"
+    ? '<img class="chain-mark" src="img/chain-ql1.jpg" alt="">'
+    : '<img class="chain-mark sq" src="img/chain-42.jpg" alt="">';
+}
 function arbCardHtml(row, kind) {
   const isRt = kind === "rt";
   const net = isRt ? row.netRt : row.netSingle;
@@ -3226,7 +3240,7 @@ function arbCardHtml(row, kind) {
   const fee = isRt ? row.feeQomRt : row.feeQom;
   const dir = t("arbDirLabel", CHAINS[row.srcKey].label, CHAINS[row.dstKey].label);
   if (!row.ok) {
-    return '<div class="route-card arb-card" style="opacity:.55"><span class="r-head"><span class="r-rank">' + esc(row.sym) + " ／ " + esc(dir) + '</span></span>' +
+    return '<div class="route-card arb-card" style="opacity:.55"><span class="r-head"><span class="r-rank">' + chainMarkHtml(row.srcKey) + chainMarkHtml(row.dstKey) + esc(row.sym) + " ／ " + esc(dir) + '</span></span>' +
       '<span class="r-line">' + esc(t("arbUnavailable")) + esc(row.reason || "") + "</span></div>";
   }
   const routeLine = row.sym === "QOM"
@@ -3236,7 +3250,7 @@ function arbCardHtml(row, kind) {
   const s2 = row.swap2Route ? pathLabel(row.dstKey, row.swap2Route.path) : null;
   const pctTxt = (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%";
   return '<div class="route-card arb-card">' +
-    '<span class="r-head"><span class="r-rank">' + esc(row.sym) + " ／ " + esc(dir) + "</span>" +
+    '<span class="r-head"><span class="r-rank">' + chainMarkHtml(row.srcKey) + chainMarkHtml(row.dstKey) + esc(row.sym) + " ／ " + esc(dir) + "</span>" +
     (row.isBenchmark ? '<span class="badge bench">' + esc(t("arbBenchmarkRow")) + "</span>" : "") +
     '<span class="r-out arb-net ' + (pct >= 0 ? "pos" : "neg") + '">' + pctTxt + "</span></span>" +
     '<span class="r-line">' + esc(routeLine) + "</span>" +

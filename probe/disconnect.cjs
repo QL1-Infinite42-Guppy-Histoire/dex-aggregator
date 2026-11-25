@@ -55,7 +55,7 @@ async function stubFetch(url, opts) {
   return { ok: true, status: 200, json: async () => payload };
 }
 
-const IDS = ["chainInf", "chainQl1", "chainTest", "testnetBanner", "chainNote", "connectBtn", "connectBtnMain", "connDlg", "connTitle", "connAddr", "disconnectBtn", "connClose", "fromTokenBadge", "toTokenBadge", "xFromTokenBadge", "xToTokenBadge", "accountLine", "status", "fromToken", "toToken", "fromBalance", "toBalance", "amountIn", "flipBtn", "quoteBtn", "planArea", "routeList", "splitNote", "rateLine", "rateInvertBtn", "gasLine", "receiveOut", "minLine", "swapBtn", "txResult", "slipCustom", "caInput", "caAddBtn", "caMsg", "modeSame", "modeCross", "modeNote", "swapPanel", "caPanel", "crossPanel", "xSrcInf", "xSrcQl1", "xDstLabel", "xFromToken", "xToToken", "xFromBalance", "xAmount", "xQuoteBtn", "xStatus", "xCandidates", "xFlow", "xAbandon", "arbPanel", "arbAmount", "arbScanBtn", "arbStatus", "arbBoard", "arbTestnetNote", "langSel", "aggArea", "themeToggle"];
+const IDS = ["chainInf", "chainQl1", "chainTest", "testnetBanner", "chainNote", "connectBtn", "connectBtnMain", "connDlg", "connTitle", "connAddr", "disconnectBtn", "connClose", "fromTokenBadge", "toTokenBadge", "xFromTokenBadge", "xToTokenBadge", "accountLine", "status", "fromToken", "toToken", "fromBalance", "toBalance", "amountIn", "flipBtn", "quoteBtn", "planArea", "routeList", "splitNote", "rateLine", "rateInvertBtn", "gasLine", "receiveOut", "minLine", "swapBtn", "txResult", "slipCustom", "caInput", "caAddBtn", "caMsg", "modeSame", "modeCross", "modeNote", "swapPanel", "caPanel", "crossPanel", "xSrcInf", "xSrcQl1", "xDstLabel", "xDstMark", "xFromToken", "xToToken", "xFromBalance", "xAmount", "xQuoteBtn", "xStatus", "xCandidates", "xFlow", "xAbandon", "arbPanel", "arbAmount", "arbScanBtn", "arbStatus", "arbBoard", "arbTestnetNote", "langSel", "aggArea", "themeToggle"];
 function loadPage(lang, eth, presetStore) {
   function makeEl(id) {
     return {
@@ -270,6 +270,33 @@ const countCalls = (eth, method) => eth.calls.filter((c) => c && c.method === me
     await withProv.els.connectBtn.click();
     assert.strictEqual(withProv.app.state.account, ACCT_A, "13: click connects as before");
     console.log("  13 PASS: provider at load -> unchanged behaviour");
+  }
+
+  /* ================= チェーンマーク (2026-11-25) ================= */
+  console.log("=== Chain marks ===");
+  {
+    for (const [name, file] of [["EN", "../docs/en.html"], ["JA", "../docs/ja.html"]]) {
+      const html = fs.readFileSync(__dirname + "/" + file, "utf8");
+      assert.strictEqual((html.match(/img\/chain-42\.jpg/g) || []).length, 4, name + ": 42 mark in chain switcher x2 + cross source + destination");
+      assert.strictEqual((html.match(/img\/chain-ql1\.jpg/g) || []).length, 2, name + ": QL1 mark in chain switcher + cross source");
+      assert.ok(html.includes('id="xDstMark"'), name + ": destination mark element present");
+    }
+    console.log("  14a PASS: both pages reference the marks at the switcher / cross source / destination spots");
+
+    const { app, els } = loadPage("en", makeEth({ accounts: [ACCT_A] }));
+    app.setXSrc("infinite");
+    assert.strictEqual(els.xDstMark.src, "img/chain-ql1.jpg", "14b: destination mark follows the label (QL1)");
+    assert.strictEqual(els.xDstMark.className, "chain-mark", "14b: QL1 mark uses the round frame");
+    app.setXSrc("ql1");
+    assert.strictEqual(els.xDstMark.src, "img/chain-42.jpg", "14b: destination mark follows the label (42 Chain)");
+    assert.strictEqual(els.xDstMark.className, "chain-mark sq", "14b: 42 mark uses the rounded-square frame");
+    console.log("  14b PASS: destination mark swaps with the destination chain");
+
+    app.state.arbRows = [{ sym: "QOM", srcKey: "ql1", dstKey: "infinite", ok: false, reason: " (stub)", gainSinglePct: 0, gainRtPct: 0 }];
+    app.state.arbStartRaw = 1000n;
+    app.renderArbBoard();
+    assert.ok(els.arbBoard.innerHTML.includes('src="img/chain-ql1.jpg"') && els.arbBoard.innerHTML.includes('src="img/chain-42.jpg"'), "14c: arb card shows both direction marks");
+    console.log("  14c PASS: arbitrage board cards carry the source/destination marks");
   }
 
   console.log("DISCONNECT PROBE: ALL PASS");

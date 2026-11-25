@@ -286,3 +286,6 @@ dialog#connDlg h3 { margin: 0 0 10px; font-size: 17px; letter-spacing: .06em; te
 .conn-row { display: flex; gap: 8px; align-items: center; }
 button.danger { background: linear-gradient(180deg, #f87171, var(--red) 55%, var(--red-d)); color: #fff; border-color: var(--red-d); box-shadow: 0 5px 0 var(--red-d), 0 10px 18px rgba(220,38,38,.35), inset 0 1px 0 rgba(255,255,255,.45); }
 button.danger:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 1px 0 var(--red-d), 0 4px 8px rgba(220,38,38,.3), inset 0 1px 0 rgba(255,255,255,.3); }
+/* チェーンマーク (チェーン表示箇所の小さいロゴ、2026-11-25) */
+.chain-mark { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; vertical-align: -5px; margin-right: 6px; }
+.chain-mark.sq { border-radius: 5px; }
