@@ -90,7 +90,7 @@ function loadPage(lang, eth, presetStore) {
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(__dirname + "/../docs/app.js", "utf8"), sandbox, { filename: "app.js" });
-  return { app: sandbox.module.exports, els, store };
+  return { app: sandbox.module.exports, els, store, win: sandbox.window };
 }
 const flush = () => new Promise((r) => setTimeout(r, 0));
 const countCalls = (eth, method) => eth.calls.filter((c) => c && c.method === method).length;
@@ -214,6 +214,62 @@ const countCalls = (eth, method) => eth.calls.filter((c) => c && c.method === me
     assert.strictEqual(els.accountLine.textContent, "未接続（見積もりだけなら接続なしで使えます）", "10: accountLine not-connected text (JA)");
     assert.strictEqual(els.status.textContent, "ウォレットの接続を解除しました", "10: status (JA)");
     console.log("  10 PASS: JA dialog + disconnect strings");
+  }
+
+  /* ================= 常時表示の接続ボタン (2026-11-25) ================= */
+  console.log("=== Always-visible connect button ===");
+  {
+    /* 静的確認: 両ページの接続ボタンは hidden/disabled 属性なしで常時描画 */
+    for (const [name, file] of [["EN", "../docs/en.html"], ["JA", "../docs/ja.html"]]) {
+      const html = fs.readFileSync(__dirname + "/" + file, "utf8");
+      for (const id of ["connectBtn", "connectBtnMain"]) {
+        const m = html.match(new RegExp('<button id="' + id + '"[^>]*>'));
+        assert.ok(m, name + ": " + id + " present in static HTML");
+        assert.ok(!/hidden|disabled/.test(m[0]), name + ": " + id + " is not hidden/disabled in markup");
+      }
+    }
+    console.log("  11a PASS: both connect buttons are static, never hidden/disabled in markup");
+
+    /* (a) プロバイダなしでロード → ボタン有効、クリックで案内、例外なし */
+    const noProv = loadPage("en", null);
+    assert.strictEqual(noProv.els.connectBtn.disabled, false, "11b: header connect enabled without a provider");
+    assert.strictEqual(noProv.els.connectBtnMain.disabled, false, "11b: main connect enabled without a provider");
+    await noProv.els.connectBtn.click();
+    assert.strictEqual(noProv.els.status.textContent, "MetaMask not found. Open this page in a browser with MetaMask (or a compatible wallet)", "11b: no-wallet guidance shown as status, got: " + noProv.els.status.textContent);
+    assert.strictEqual(noProv.app.state.account, null, "11b: still disconnected");
+    assert.strictEqual(noProv.els.connectBtn.disabled, false, "11b: button still usable after the guidance");
+    await noProv.els.connectBtnMain.click(); await flush();
+    assert.ok(noProv.els.status.textContent.includes("MetaMask not found"), "11b: main CTA shows the same guidance");
+    /* クロスモードでは見えている側 (xStatus) にも案内が出る */
+    noProv.app.setMode("cross");
+    await noProv.els.connectBtn.click();
+    assert.strictEqual(noProv.els.xStatus.textContent, "MetaMask not found. Open this page in a browser with MetaMask (or a compatible wallet)", "11b: guidance mirrored to the visible cross-mode status");
+    console.log("  11b PASS: no provider at load -> buttons live, click shows guidance (both modes), no exception");
+
+    const noProvJa = loadPage("ja", null);
+    await noProvJa.els.connectBtn.click();
+    assert.strictEqual(noProvJa.els.status.textContent, "MetaMaskが見つかりません。MetaMask（または対応ウォレット）を入れたブラウザで開いてください", "11c: guidance shown (JA)");
+    console.log("  11c PASS: no-provider guidance (JA)");
+
+    /* (b) ロード後にプロバイダが注入されたら、クリックで接続できる */
+    const late = loadPage("en", null);
+    assert.strictEqual(late.app.state.account, null, "12: starts disconnected");
+    late.win.ethereum = makeEth({ accounts: [ACCT_A] });
+    await late.els.connectBtn.click();
+    assert.strictEqual(late.app.state.account, ACCT_A, "12: late-injected provider connects at click time");
+    assert.ok(late.els.accountLine.textContent.includes("Connected:"), "12: connected state rendered");
+    /* 接続後は従来どおり再タップでダイアログが開く */
+    await late.els.connectBtn.click(); await flush();
+    assert.strictEqual(late.els.connDlg.open, true, "12: disconnect dialog still opens after a late-injected connect");
+    console.log("  12 PASS: provider injected after load -> click connects, dialog logic intact");
+
+    /* (c) プロバイダありでロードした場合は従来どおり */
+    const withProv = loadPage("en", makeEth({ accounts: [ACCT_A] }));
+    assert.strictEqual(withProv.els.connectBtn.disabled, false, "13: header connect enabled with a provider");
+    assert.strictEqual(withProv.els.connectBtnMain.disabled, false, "13: main connect enabled with a provider");
+    await withProv.els.connectBtn.click();
+    assert.strictEqual(withProv.app.state.account, ACCT_A, "13: click connects as before");
+    console.log("  13 PASS: provider at load -> unchanged behaviour");
   }
 
   console.log("DISCONNECT PROBE: ALL PASS");

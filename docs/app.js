@@ -2066,6 +2066,11 @@ async function onQuote() {
 }
 
 /* ---------- MetaMask ---------- */
+/* プロバイダは呼び出しのたびに読み直す (クリック時判定)。ウォレットの
+   アプリ内ブラウザは注入がロード後になることがあるため、ロード時点で
+   有無を確定させない。接続ボタン (#connectBtn / #connectBtnMain) は
+   プロバイダの有無にかかわらず常時表示で、隠したり差し替えたりしない
+   (常時表示の接続ボタン、2026-11-25)。 */
 function eth() { return (typeof window !== "undefined" && window.ethereum) ? window.ethereum : null; }
 async function ensureChain(chainObj) {
   const e = eth(); if (!e) throw new Error(t("errNoMetaMask"));
@@ -2090,7 +2095,13 @@ async function onConnect() {
      (QOM DEX と同じ仕様に統一、2026-11-25)。 */
   if (state.account) { openConnDialog(); return; }
   const e = eth();
-  if (!e) { setStatus(t("errNoMetaMask"), true); return; }
+  if (!e) {
+    /* プロバイダが無い時だけ案内を出す。クロスモードでは #status の
+       あるパネルが非表示なので、見えている側のステータスにも出す。 */
+    setStatus(t("errNoMetaMask"), true);
+    if (state.mode === "cross") setXStatus(t("errNoMetaMask"), true);
+    return;
+  }
   try {
     const accts = await e.request({ method: "eth_requestAccounts" });
     if (!accts || !accts.length) throw new Error(t("errNoAccount"));
@@ -2102,7 +2113,11 @@ async function onConnect() {
     updateReceive();
     renderAggArea();
     setStatus(t("statusConnected"));
-  } catch (err) { setStatus(t("statusConnectFail") + friendlyErr(err), true); }
+  } catch (err) {
+    const m = t("statusConnectFail") + friendlyErr(err);
+    setStatus(m, true);
+    if (state.mode === "cross") setXStatus(m, true);
+  }
 }
 /* ---------- 接続ダイアログ / 切断 (QOM DEX と仕様統一、2026-11-25) ---------- */
 function openConnDialog() {
