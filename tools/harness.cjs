@@ -1,10 +1,10 @@
 "use strict";
 /* DOM-stub harness v2: docs/app.js を JP / EN 両ページ相当のスタブ上で実行し、
-   見積もりランキング / 分割評価 / ルート選択 / CA追加 / テストネット設定 を検証する。 */
+   見積もりランキング / 分割評価 / ルート選択 / CA追加 を検証する。 */
 const fs = require("fs");
 const vm = require("vm");
 
-const IDS = ["chainInf", "chainQl1", "chainTest", "testnetBanner", "chainNote", "connectBtn", "accountLine", "status", "fromToken", "toToken", "fromBalance", "toBalance", "amountIn", "flipBtn", "quoteBtn", "planArea", "routeList", "splitNote", "rateLine", "rateInvertBtn", "gasLine", "receiveOut", "minLine", "swapBtn", "txResult", "slipCustom", "caInput", "caAddBtn", "caMsg", "modeSame", "modeCross", "modeNote", "swapPanel", "caPanel", "crossPanel", "xSrcInf", "xSrcQl1", "xDstLabel", "xFromToken", "xToToken", "xFromBalance", "xAmount", "xQuoteBtn", "xStatus", "xCandidates", "xFlow", "xAbandon", "arbPanel", "arbAmount", "arbScanBtn", "arbStatus", "arbBoard", "arbTestnetNote", "langSel", "aggArea"];
+const IDS = ["chainInf", "chainQl1", "chainNote", "connectBtn", "accountLine", "status", "fromToken", "toToken", "fromBalance", "toBalance", "amountIn", "flipBtn", "quoteBtn", "planArea", "routeList", "splitNote", "rateLine", "rateInvertBtn", "gasLine", "receiveOut", "minLine", "swapBtn", "txResult", "slipCustom", "caInput", "caAddBtn", "caMsg", "modeSame", "modeCross", "modeNote", "swapPanel", "caPanel", "crossPanel", "xSrcInf", "xSrcQl1", "xDstLabel", "xFromToken", "xToToken", "xFromBalance", "xAmount", "xQuoteBtn", "xStatus", "xCandidates", "xFlow", "xAbandon", "arbPanel", "arbAmount", "arbScanBtn", "arbStatus", "arbBoard", "langSel", "aggArea"];
 
 function loadPage(lang, seedStore) {
   function makeEl(id) {
@@ -50,16 +50,6 @@ function loadPage(lang, seedStore) {
   app.selectRoute(0);
   console.log("[JP] after selectRoute(0): plan =", JSON.stringify(app.state.selectedPlan), "| swapBtn label:", els.swapBtn.textContent, "| splitNote:", els.splitNote.textContent.slice(0, 40));
 
-  // テストネットへ切替 + 実見積もり
-  app.setChain("testnet");
-  console.log("\n[JP-Testnet] chainNote:", els.chainNote.textContent, "| banner display:", JSON.stringify(els.testnetBanner.style.display), "| from:", els.fromToken.value, "to:", els.toToken.value);
-  console.log("[JP-Testnet] config: chainId", app.CHAINS.testnet.chainId, "| router", app.CHAINS.testnet.router, "| aggregator", JSON.stringify(app.CHAINS.testnet.aggregator), "| splitExecutable:", app.splitExecutable(app.CHAINS.testnet));
-  els.amountIn.value = "100";
-  await app.onQuote();
-  const outsT = app.state.routes.map((r) => r.amountOut);
-  console.log("[JP-Testnet] TEST42->ARBA routes:", app.state.routes.length, "| sorted:", outsT.every((v, i) => i === 0 || outsT[i - 1] >= v), "| top:", app.formatAmount(outsT[0], 18, 6), "ARBA | status:", els.status.textContent);
-  console.log("[JP-Testnet] split evaluated:", app.state.splitEval && app.state.splitEval.evaluated, "| receiveOut:", els.receiveOut.textContent, "| rate:", els.rateLine.textContent);
-
   // QL1 + CA (v1 から継続)
   app.setChain("ql1");
   els.amountIn.value = "10";
@@ -80,15 +70,6 @@ function loadPage(lang, seedStore) {
   console.log("[EN] minLine:", eels.minLine.textContent);
   eapp.selectRoute(0);
   console.log("[EN] swapBtn label:", eels.swapBtn.textContent, "| splitNote:", eels.splitNote.textContent.slice(0, 60));
-  eapp.setChain("testnet");
-  console.log("[EN-Testnet] chainNote:", eels.chainNote.textContent);
-  eels.amountIn.value = "1000";
-  // ARBA -> ARBB (direct + via TEST42) で分割評価が走るケース
-  eels.fromToken.value = "arba"; eels.toToken.value = "arbb";
-  await eapp.onQuote();
-  const ese = eapp.state.splitEval;
-  console.log("[EN-Testnet] ARBA->ARBB routes:", eapp.state.routes.length, "| split evaluated:", ese && ese.evaluated, "| best split:", ese && ese.best ? eapp.formatAmount(ese.best.totalOut, 18, 6) : null, "| single best:", eapp.formatAmount(eapp.state.routes[0].amountOut, 18, 6), "| plan:", !!(ese && ese.plan));
-
   /* ================= v3 cross-chain (JP) ================= */
   console.log("\n[V3-JP] --- cross-chain ---");
   app.state.account = "0x1111111111111111111111111111111111111111";
@@ -117,9 +98,9 @@ function loadPage(lang, seedStore) {
   console.log("[V3-JP] checkArrival with no arrival returns:", arr, "| step stays:", jp2.app.state.xflow.step);
   jp2.app.onXAbandon();
   console.log("[V3-JP] after abandon: flow", jp2.app.state.xflow, "| store cleared:", !jp.store["dexagg_xflow_v1"]);
-  // testnet guard: cross mode must fall back to same-chain
-  jp2.app.setMode("cross"); jp2.app.setChain("testnet");
-  console.log("[V3-JP] testnet guard: mode after setChain(testnet) =", jp2.app.state.mode);
+  // removed-chain fallback: an unknown chain key falls back to 42 Chain
+  jp2.app.setChain("testnet");
+  console.log("[V3-JP] removed-chain fallback: chainKey after setChain(removed) =", jp2.app.state.chainKey);
 
   /* ================= v3 cross-chain (EN) ================= */
   const en2 = loadPage("en");

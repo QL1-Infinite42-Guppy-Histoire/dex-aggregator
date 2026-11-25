@@ -1,5 +1,5 @@
 "use strict";
-/* DEXアグリゲーター (42 Chain / QL1 / 42 Testnet)
+/* DEXアグリゲーター (42 Chain / QL1)
    1inch風: 直接・1つ経由・2つ経由の全ルートを getAmountsOut で比較し、
    さらに上位ルートへの「分割」配分も評価して一番多いプランを提示する。
    分割の1tx実行には専用コントラクト (contracts/SplitSwap.sol) が必要。
@@ -75,7 +75,6 @@ const STR = {
     connectedTitle: "ウォレット接続中", disconnectBtn: "接続を解除", statusDisconnected: "ウォレットの接続を解除しました",
     noteInfinite: "42 Chain（チェーンID 421018）／ DEX: Don't Panic（Nutri-Matic）",
     noteQl1: "QL1（チェーンID 766）／ DEX: QomSwap",
-    noteTestnet: "42 Testnet（チェーンID 421018001）／ DEX: Don't Panic 系テストネット（ルーターは復旧済みアドレス）",
     routeBest: "いちばん多い", routeDirect: "直接ルート", routeVsDirect: (d) => "直接より " + (d >= 0 ? "+" : "") + d + "%",
     routeNoDirect: "直接ルートなし", routeImpact: (v) => "値段の下がり幅 約" + v + "%", routeImpactNA: "値段の下がり幅 —",
     routeHops: (n) => "交換 " + n + "回", gasEst: "ガス目安", gasApproxSuffix: "（目安）", gasPrefix: "約 ",
@@ -83,12 +82,10 @@ const STR = {
     splitVsSingle: (d) => "単一ベストより " + (d >= 0 ? "+" : "") + d + "%",
     splitLost: (amt, sym) => "分割も比べました（最良の分割は約 " + amt + " " + sym + "）。今回は単一ルートがいちばんです。",
     splitQuoteOnly: "分割の実行には専用コントラクトが必要です。下の「アグリゲーターをデプロイ」で自分のウォレットから用意すると、そのまま実行できます（今は見積もりのみ）。",
-    splitQuoteOnlyTestnet: "分割の実行には専用コントラクトが必要です。下の「アグリゲーターをデプロイ」で用意できますが、テストネットではガス代に TEST42 が必要です（今は見積もりのみ）。",
     splitExecutable: "このチェーンには分割用コントラクトがあるため、分割プランをそのまま実行できます。",
     aggTitle: "分割用コントラクト（アグリゲーター）",
     aggNone: "このチェーンにはまだ分割用コントラクトがありません。自分のウォレットからデプロイすると（ガス代は自分の負担です）、住所がこのブラウザに保存されて、分割プランをそのまま実行できるようになります。デプロイされるのは、このサイトのリポジトリで公開している SplitSwap そのものです（資産を預かる仕組みはなく、交換のたびに自分の分だけを通すだけです）。",
     aggDeployBtn: "アグリゲーターをデプロイ",
-    aggDeployTestnetNote: "（テストネットではガス代に TEST42 が必要です）",
     aggNeedConnectFirst: "デプロイには先にウォレット接続が必要です。",
     aggInUse: (addr) => "使用中: " + addr,
     aggSourceBuiltin: "サイト内蔵の住所",
@@ -223,7 +220,6 @@ const STR = {
     connectedTitle: "Wallet connected", disconnectBtn: "Disconnect", statusDisconnected: "Wallet disconnected",
     noteInfinite: "42 Chain (chain ID 421018) / DEX: Don't Panic (Nutri-Matic)",
     noteQl1: "QL1 (chain ID 766) / DEX: QomSwap",
-    noteTestnet: "42 Testnet (chain ID 421018001) / DEX: Don't Panic-style testnet (router address recovered and verified on-chain)",
     routeBest: "Best", routeDirect: "Direct route", routeVsDirect: (d) => (d >= 0 ? "+" : "") + d + "% vs direct",
     routeNoDirect: "No direct route", routeImpact: (v) => "Price impact approx. " + v + "%", routeImpactNA: "Price impact —",
     routeHops: (n) => n + (n === 1 ? " swap" : " swaps"), gasEst: "Est. gas", gasApproxSuffix: " (estimate)", gasPrefix: "approx. ",
@@ -231,12 +227,10 @@ const STR = {
     splitVsSingle: (d) => (d >= 0 ? "+" : "") + d + "% vs best single route",
     splitLost: (amt, sym) => "Splits were compared too (best split approx. " + amt + " " + sym + "). A single route is best this time.",
     splitQuoteOnly: "Executing a split needs a dedicated aggregator contract. Deploy one from your own wallet below and the plan can be executed as shown (quote only for now).",
-    splitQuoteOnlyTestnet: "Executing a split needs a dedicated aggregator contract. You can deploy one with the button below, but the testnet needs TEST42 for gas (quote only for now).",
     splitExecutable: "This chain has a split contract, so the split plan can be executed as shown.",
     aggTitle: "Split contract (aggregator)",
     aggNone: "This chain has no split contract yet. Deploying one from your own wallet (you pay the gas) saves its address in this browser and makes split plans executable as shown. What gets deployed is exactly the SplitSwap contract published in this site's repository — it never custodies funds; it only passes your own swap through on each call.",
     aggDeployBtn: "Deploy the aggregator",
-    aggDeployTestnetNote: " (On the testnet you need TEST42 for gas.)",
     aggNeedConnectFirst: "Connect your wallet first to deploy.",
     aggInUse: (addr) => "In use: " + addr,
     aggSourceBuiltin: "built-in address",
@@ -341,7 +335,7 @@ const CHAINS = {
     explorer: "https://scan.infinitedrive.xyz",
     router: "0xbf07dfe35746894bae373f63f4bf2379f9bafec0",
     factory: "0x3157c6aca800d507af95ab1466adbA3a6f11eE1a",
-    nativeAnchor: NATIVE_PH, aggregator: "", isTestnet: false,
+    nativeAnchor: NATIVE_PH, aggregator: "",
     tokens: [
       { id: "native", symbol: "42", name: "42 (native)", address: NATIVE_PH, decimals: 18, isNative: true },
       { id: "usdt", symbol: "USDT", name: "Bridged USDT", address: "0xc2684966e5c95b2bc636fb4a1f3da9ad23d94753", decimals: 18, isNative: false },
@@ -373,7 +367,7 @@ const CHAINS = {
     explorer: "https://scan.qom.network",
     router: "0xc1f90231035a52091ebcb7dddaCa3051a5F44f30".toLowerCase(),
     factory: "0x475f361993d6facbf32fb82b66be0fb40f3d974c",
-    nativeAnchor: WQOM, aggregator: "", isTestnet: false,
+    nativeAnchor: WQOM, aggregator: "",
     tokens: [
       { id: "native", symbol: "QOM", name: "QOM (native)", address: WQOM, decimals: 18, isNative: true },
       { id: "wqom", symbol: "WQOM", name: "Wrapped QOM", address: WQOM, decimals: 18, isNative: false },
@@ -392,34 +386,6 @@ const CHAINS = {
     ],
     baseAddresses: [WQOM, "0xc276b91c0e8d10260af7b67009d2683bb7776308", "0xb0a125e9673dc8e12bbcd0769c1257cf4a836d54", "0x8cb00ee173ae1c35d66118b7e08a69a0d4da06f2", "0x4af41f453ead00d1cc6aa0b5b454bdeb102afc8d"],
     defaultFrom: "qusdt", defaultTo: "native",
-  },
-  testnet: {
-    key: "testnet", label: "42 Testnet", chainId: 421018001,
-    nativeSymbol: "TEST42", nativeName: "Infinite Improbability Drive Testnet",
-    rpcs: ["https://evm-rpc-testnet.infinitedrive.xyz"],
-    explorer: "", // テストネット用エクスプローラーは未確認のため無し（推測で入れない）
-    // router は Builders 投稿の記録が41桁で壊れていたため、1文字削除の全候補を
-    // ライブRPCで検証して復旧した (factory() が下の factory を返し WETH() が答えた唯一の候補)。
-    router: "0xfe644aa3e5c9b3901822627a237f5e4c2d012690",
-    factory: "0x8944aadc2b88e1ee59fc079d6e70b23c758494da",
-    nativeAnchor: NATIVE_PH,
-    // 分割実行用 SplitSwap の内蔵スロット (最優先)。空の間は、ユーザーが画面から
-    // デプロイしてブラウザに保存した住所が使われる (v7)。テストネットのデプロイには
-    // ガス代の TEST42 が必要 (公開ファウセットは見つかっていない)。
-    aggregator: "",
-    isTestnet: true,
-    // トークン一覧はテストネット factory の全6ペアを列挙して生成した実物
-    // (tools/enumerate_testnet.cjs, 2026-11-06)。メインネットのアドレス流用ではない。
-    tokens: [
-      { id: "native", symbol: "TEST42", name: "TEST42 (native)", address: NATIVE_PH, decimals: 18, isNative: true },
-      { id: "fox", symbol: "FOXXEY", name: "Foxxey", address: "0x68d5a28d3bf09a32d3b9c35714ab7a6166ae2a00", decimals: 18, isNative: false },
-      { id: "arba", symbol: "ARBA", name: "ArbTokenA", address: "0xb71ea881e20d525bdc11755b41912b76d000cc73", decimals: 18, isNative: false },
-      { id: "arbb", symbol: "ARBB", name: "ArbTokenB", address: "0x7d16e53c505349454489a3aef85bb2e2e8cbfa42", decimals: 18, isNative: false },
-      { id: "pop", symbol: "pop", name: "popcorn", address: "0x8460711b38d845b93ebc99d6d0c6fc53ec5a5558", decimals: 18, isNative: false },
-      { id: "tst", symbol: "TST", name: "Test", address: "0xc5988ab7022a750716a40454166097232ae75f78", decimals: 18, isNative: false },
-    ],
-    baseAddresses: [NATIVE_PH, "0xb71ea881e20d525bdc11755b41912b76d000cc73", "0x7d16e53c505349454489a3aef85bb2e2e8cbfa42"],
-    defaultFrom: "native", defaultTo: "arba",
   },
 };
 
@@ -470,7 +436,7 @@ function estimateGasUnitsSplit(legs) { return GAS_AGG_OVERHEAD + legs.reduce((s,
 /* ---------- state ---------- */
 const state = {
   chainKey: "infinite",
-  custom: { infinite: [], ql1: [], testnet: [] },
+  custom: { infinite: [], ql1: [] },
   account: null,
   routes: [],
   directOut: null,
@@ -1889,7 +1855,7 @@ function validCustomToken(tk) {
 function loadLocal() {
   try {
     const c = JSON.parse(localStorage.getItem("dexagg_custom_v1") || "{}");
-    for (const k of ["infinite", "ql1", "testnet"]) if (Array.isArray(c[k])) state.custom[k] = c[k].filter(validCustomToken);
+    for (const k of ["infinite", "ql1"]) if (Array.isArray(c[k])) state.custom[k] = c[k].filter(validCustomToken); // 削除済みチェーン (2026-11-25 削除) の保存分は読み込まず無視する
   } catch (e) { /* ignore */ }
 }
 function saveLocal() {
@@ -2075,7 +2041,7 @@ function updateReceive() {
   const isSplit = state.selectedPlan.type === "split";
   $("swapBtn").textContent = isSplit ? t("swapBtnSplit") : t("swapBtnSingle");
   const sn = $("splitNote");
-  if (isSplit) sn.textContent = (splitExecutable(chain()) ? t("splitExecutable") : (chain().isTestnet ? t("splitQuoteOnlyTestnet") : t("splitQuoteOnly"))) + " " + t("splitUnaudited");
+  if (isSplit) sn.textContent = (splitExecutable(chain()) ? t("splitExecutable") : t("splitQuoteOnly")) + " " + t("splitUnaudited");
   else sn.textContent = "";
   $("swapBtn").disabled = !state.account || (isSplit && !splitExecutable(chain()));
 }
@@ -2269,7 +2235,7 @@ function renderAggArea() {
       (c.explorer ? '<p class="agg-line"><a href="' + esc(c.explorer + "/address/" + agg) + '" target="_blank" rel="noopener">' + esc(t("aggExplorer")) + "</a></p>" : "") +
       (src === "local" ? '<button type="button" id="aggClearBtn" class="agg-btn">' + esc(t("aggClearBtn")) + "</button>" : "");
   } else {
-    html += '<p class="agg-line">' + esc(t("aggNone")) + (c.isTestnet ? esc(t("aggDeployTestnetNote")) : "") + "</p>" +
+    html += '<p class="agg-line">' + esc(t("aggNone")) + "</p>" +
       '<button type="button" id="aggDeployBtn" class="agg-btn">' + esc(t("aggDeployBtn")) + "</button>";
   }
   /* SplitSwap の未監査警告 (監査 2026-11-24 #9、表示のみ)。コントラクト
@@ -2328,7 +2294,7 @@ async function onSwap() {
   try {
     await ensureChain();
     if (isSplit) {
-      if (!splitExecutable(c)) { setStatus(c.isTestnet ? t("splitQuoteOnlyTestnet") : t("splitQuoteOnly"), true); return; }
+      if (!splitExecutable(c)) { setStatus(t("splitQuoteOnly"), true); return; }
       const plan = state.splitEval && state.splitEval.plan;
       if (!plan) { setStatus(t("statusNeedQuote"), true); return; }
       /* A (監査 #10): 分割も送信直前に各レッグの保存パスを再見積もりし、
@@ -2394,11 +2360,7 @@ async function onSwap() {
 function xDstKey() { return state.xSrc === "ql1" ? "infinite" : "ql1"; }
 function setXStatus(msg, isErr) { const el = $("xStatus"); if (el) { el.textContent = msg || ""; el.style.color = isErr ? "#ff9d9d" : ""; } }
 function setMode(mode) {
-  if (mode === "cross" && state.chainKey === "testnet") {
-    state.mode = "same";
-    if ($("modeNote")) $("modeNote").textContent = LANG === "en" ? "Cross-chain is mainnet-only (no QL1 testnet bridge is known)." : "クロスチェーンは本番チェーン同士だけです（QL1のテストネットブリッジは確認できていません）。";
-    mode = "same";
-  } else state.mode = mode;
+  state.mode = mode;
   const cross = state.mode === "cross";
   if ($("swapPanel")) $("swapPanel").style.display = cross ? "none" : "";
   if ($("caPanel")) $("caPanel").style.display = cross ? "none" : "";
@@ -3323,7 +3285,7 @@ function renderArbBoard() {
   }));
 }
 async function onArbScan() {
-  if (MAINTENANCE_MODE) return;  if (state.chainKey === "testnet") { setArbStatus(LANG === "en" ? "The price-gap board is mainnet-only (no QL1 testnet bridge is known)." : "価格差ボードは本番チェーン同士だけです（QL1のテストネットブリッジは確認できていません）。", true); return; }
+  if (MAINTENANCE_MODE) return;
   let startRaw;
   try {
     startRaw = parseAmount($("arbAmount").value, 18);
@@ -3344,7 +3306,6 @@ async function onArbScan() {
 async function startArbFlow(row, kind) {
   if (MAINTENANCE_MODE) return;  if (!row || !row.ok) return;
   const isRt = kind === "rt";
-  if (state.chainKey === "testnet") setChain("infinite");
   setMode("cross");
   setXSrc(row.srcKey);
   if ($("xFromToken")) $("xFromToken").value = qomTokenId(row.srcKey);
@@ -3395,17 +3356,13 @@ async function onCaAdd() {
 
 /* ---------- wiring ---------- */
 function setChain(key) {
-  if (key === "testnet" && state.mode === "cross") setMode("same");
+  if (!CHAINS[key]) key = "infinite"; // 削除済みチェーン等の不明なキーは 42 Chain に落とす
   state.chainKey = key;
   if (state.mode === "cross" && key !== state.xSrc && (key === "infinite" || key === "ql1")) { setXSrc(key); return; }
   state.balances = {};
   $("chainInf").classList.toggle("active", key === "infinite");
   $("chainQl1").classList.toggle("active", key === "ql1");
-  if ($("chainTest")) $("chainTest").classList.toggle("active", key === "testnet");
-  if ($("testnetBanner")) $("testnetBanner").style.display = key === "testnet" ? "" : "none";
-  if ($("arbTestnetNote")) $("arbTestnetNote").style.display = key === "testnet" ? "" : "none";
-  if ($("arbScanBtn")) $("arbScanBtn").disabled = key === "testnet";
-  $("chainNote").textContent = key === "infinite" ? t("noteInfinite") : key === "ql1" ? t("noteQl1") : t("noteTestnet");
+  $("chainNote").textContent = key === "infinite" ? t("noteInfinite") : t("noteQl1");
   fillTokenSelects();
   renderAggArea();
   clearRoutes(t("statusChainSwitched"));
@@ -3474,7 +3431,6 @@ function initApp() {
   fillTokenSelects();
   $("chainInf").addEventListener("click", () => setChain("infinite"));
   $("chainQl1").addEventListener("click", () => setChain("ql1"));
-  if ($("chainTest")) $("chainTest").addEventListener("click", () => setChain("testnet"));
   $("connectBtn").addEventListener("click", onConnect);
   if ($("connectBtnMain")) $("connectBtnMain").addEventListener("click", () => { const b = $("connectBtn"); if (b && b.click) b.click(); });
   if ($("connClose")) $("connClose").addEventListener("click", onConnClose);

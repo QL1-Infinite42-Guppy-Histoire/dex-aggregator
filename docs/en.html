@@ -3,38 +3,35 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DEX Aggregator (42 Chain / QL1 / 42 Testnet)</title>
-<meta name="description" content="Compare direct, multi-hop and split routes across all pools on 42 Chain (Infinite), QL1 and the 42 testnet, and swap along the plan that gives you the most.">
+<title>DEX Aggregator (42 Chain / QL1)</title>
+<meta name="description" content="Compare direct, multi-hop and split routes across all pools on 42 Chain (Infinite) and QL1, and swap along the plan that gives you the most.">
 <script>(function(){try{var t=localStorage.getItem('guppy-theme');document.documentElement.dataset.theme=(t==='dark'?'dark':'light');}catch(e){document.documentElement.dataset.theme='light';}})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Zen+Kaku+Gothic+New:wght@500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=9">
+<link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
 <header>
   <div class="top-actions"><div class="lang-switch"><label>Language / 言語 <select id="langSel"><option value="en" selected>English</option><option value="ja">日本語</option></select></label></div><button id="connectBtn" type="button" class="header-connect">Connect wallet (MetaMask)</button><button id="themeToggle" type="button" class="theme-toggle" aria-label="Toggle background theme">🌙 Dark</button></div>
-  <h1>DEX Aggregator (42 Chain / QL1 / 42 Testnet)</h1>
+  <h1>DEX Aggregator (42 Chain / QL1)</h1>
   <p class="sub">Finds the route that gives you the most, across every pool.</p>
   <p class="sub small">A "route" is the path a swap takes. For example, USDT → 42 can go directly, or via another token like USDT → FISH → 42, and which one gives more depends on the amount. This site quotes every path — including "splits" that divide your amount across several routes — and ranks them, the same idea as 1inch.</p>
 </header>
 <main class="layout">
-
-<div id="testnetBanner" class="testnet-banner" style="display:none">⚠ Testnet (TEST42) — this is not real money</div>
 
 <section class="panel">
   <h2>Chain</h2>
   <div class="chain-row">
     <button id="chainInf" type="button" class="chain-btn active"><img class="chain-mark sq" src="img/chain-42.jpg" alt="">42 Chain</button>
     <button id="chainQl1" type="button" class="chain-btn"><img class="chain-mark" src="img/chain-ql1.jpg" alt="">QL1</button>
-    <button id="chainTest" type="button" class="chain-btn"><img class="chain-mark sq" src="img/chain-42.jpg" alt="">42 Testnet</button>
   </div>
   <p id="chainNote" class="count"></p>
   <div class="chain-row" style="margin-top:8px">
     <button id="modeSame" type="button" class="chain-btn active">Same-chain</button>
     <button id="modeCross" type="button" class="chain-btn">Cross-chain</button>
   </div>
-  <p id="modeNote" class="count">Cross-chain is between QL1 and 42 Chain (not available on the testnet).</p>
+  <p id="modeNote" class="count">Cross-chain is between QL1 and 42 Chain.</p>
   <div class="connect-row account-row">
     <span id="accountLine" class="count">Not connected (quotes work without a wallet)</span>
   </div>
@@ -57,7 +54,7 @@
       <button type="button" class="chip" data-pct="75">75%</button>
       <button type="button" class="chip" data-pct="MAX">MAX</button>
     </div>
-    <p class="count">For the native currency (42 / QOM / TEST42), MAX keeps 0.01 aside for gas. For tokens it uses the full balance.</p>
+    <p class="count">For the native currency (42 / QOM), MAX keeps 0.01 aside for gas. For tokens it uses the full balance.</p>
   </div>
 
   <div class="flip-row"><button id="flipBtn" type="button" aria-label="Flip tokens">↓↑ Flip</button></div>
@@ -128,7 +125,6 @@
 <section class="panel" id="arbPanel">
   <h2>Price gaps (arbitrage)</h2>
   <p class="count">When the same token is priced differently on QL1 and 42 Chain, you can capture the difference by buying it where it is cheap, bridging it, and selling it where it is expensive (arbitrage — trading is also what closes such gaps). This board computes routes that start and end in QOM, the common currency, for every bridgeable token in both directions using <b>real route quotes</b> (<code>getAmountsOut</code> on each leg) — spot-price comparisons would lie on these thin pools, so they are not used.</p>
-  <p id="arbTestnetNote" class="count" style="display:none">Not available on the testnet (no QL1 testnet bridge is known). Select a mainnet chain.</p>
   <label class="fld">Amount (QOM)
     <input id="arbAmount" type="text" inputmode="decimal" autocomplete="off" value="100000000000" aria-label="Amount (QOM)">
   </label>
@@ -165,8 +161,7 @@
   <ul class="notes">
     <li>Quotes are real: the site calls the DEX router's <code>getAmountsOut</code> for every candidate route (direct, 1 hop, 2 hops). Nothing is guessed from a price feed.</li>
     <li>Splits across the top routes (90/10, 80/20, …, 50/50, and 3-way splits) are quoted the same way. When a split beats every single route, it is shown as the recommended "Split plan".</li>
-    <li><b>Executing a split needs a dedicated aggregator contract.</b> The contract (SplitSwap) is published in this site's repository, and you can deploy it yourself from your own wallet right on this page, per chain (v7). The deployed address is saved in this browser, and split plans then execute as shown. On a chain where you have not deployed it, a split is a <b>quote only</b> and execution uses a single route. The testnet works the same way but needs TEST42 for gas (no public faucet was found). Each split leg also carries its own minimum output (v7). Cross-chain split plans are shown only when they still beat the best single route after the extra bridge messaging cost (v6.5).</li>
-    <li>The testnet DEX router address in public records had one character too many; this site uses the address recovered by verifying every candidate live on-chain. The testnet token list is built from the testnet's real pairs.</li>
+    <li><b>Executing a split needs a dedicated aggregator contract.</b> The contract (SplitSwap) is published in this site's repository, and you can deploy it yourself from your own wallet right on this page, per chain (v7). The deployed address is saved in this browser, and split plans then execute as shown. On a chain where you have not deployed it, a split is a <b>quote only</b> and execution uses a single route. Each split leg also carries its own minimum output (v7). Cross-chain split plans are shown only when they still beat the best single route after the extra bridge messaging cost (v6.5).</li>
     <li>"Price impact" is the difference between a no-fee estimate from pool reserves and the real quote (fees + size impact). Gas figures are estimates too.</li>
     <li>Small pools can move between quote and execution. Try a small amount first before swapping a large one.</li>
     <li>This site takes no fee. Swaps talk directly to each chain's DEX router (42 Chain: Don't Panic / QL1: QomSwap).</li>
@@ -180,7 +175,7 @@
 
 </main>
 <footer>
-  <p>v7.2 / Data: 42 Chain RPC / QL1 RPC / 42 Testnet RPC (read directly from the pools). Source code is published under the MIT license. Developed by the community — not an official product of the chains or DEXes it connects to.</p>
+  <p>v7.2 / Data: 42 Chain RPC / QL1 RPC (read directly from the pools). Source code is published under the MIT license. Developed by the community — not an official product of the chains or DEXes it connects to.</p>
 </footer>
 
 <dialog id="connDlg">
@@ -201,6 +196,6 @@
   btn.addEventListener('click',function(){ var next=document.documentElement.dataset.theme==='dark'?'light':'dark'; document.documentElement.dataset.theme=next; try{localStorage.setItem('guppy-theme',next);}catch(e){} label(); });
 })();
 </script>
-<script src="app.js?v=21"></script>
+<script src="app.js?v=22"></script>
 </body>
 </html>

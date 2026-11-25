@@ -1,9 +1,8 @@
 "use strict";
-/* Live probe v2: shipped docs/app.js の見積もり/分割/テストネットを Node で実行する。
+/* Live probe v2: shipped docs/app.js の見積もり/分割を Node で実行する。
    - Infinite USDT->42 (10 / 1000 USDT): ルート比較 + 分割評価の実数
    - QL1 qUSDT->QOM, WQOM->QSWAP
    - 直接ペア無しケース: Infinite BABY->HAWK / QL1 BABY->KET
-   - Testnet (421018001): TEST42->ARBA, ARBA->ARBB の実ルート見積もり
    - スワップ/approve/分割 の calldata 構築（送信はしない。分割は ethers で復号検証） */
 global.localStorage = { _m: {}, getItem(k) { return this._m[k] || null; }, setItem(k, v) { this._m[k] = v; } };
 const app = require("../docs/app.js");
@@ -46,13 +45,6 @@ function decodeSwapWords(data) {
   const nd2 = await quote("ql1", "baby", "ket", "10");
   console.log("直接なし検証(QL1 BABY->KET): directOut =", nd2.q.directOut, "/ 成立ルート =", nd2.q.routes.length);
 
-  /* ---- テストネット ---- */
-  console.log("\n######## 42 Testnet (421018001) ########");
-  console.log("router:", CHAINS.testnet.router, "| factory:", CHAINS.testnet.factory, "| aggregator:", JSON.stringify(CHAINS.testnet.aggregator), "| tokens:", CHAINS.testnet.tokens.map((x) => x.symbol).join(","));
-  const tn1 = await quote("testnet", "native", "arba", "100");
-  await quote("testnet", "arba", "arbb", "1000");
-  await quote("testnet", "fox", "arbb", "10000");
-
   /* ---- calldata 構築シミュレーション（送信しない） ---- */
   console.log("\n=== calldata 構築（ブロードキャストなし） ===");
   const acct = "0x1111111111111111111111111111111111111111";
@@ -70,8 +62,8 @@ function decodeSwapWords(data) {
   const { ethers } = require("/home/hatch/workspace/qom-staking/node_modules/ethers");
   const artifact = require("../contracts/SplitSwap.json");
   const iface = new ethers.Interface(artifact.abi);
-  const fakeChain = { ...CHAINS.testnet, aggregator: "0x2222222222222222222222222222222222222222" };
-  const src = big.q.routes.length >= 2 ? big : tn1;
+  const fakeChain = { ...CHAINS.infinite, aggregator: "0x2222222222222222222222222222222222222222" };
+  const src = big;
   const plan = {
     legs: [
       { route: src.q.routes[0], pct: 60, amountIn: (src.amountIn * 60n) / 100n, amountOut: (src.q.routes[0].amountOut * 60n) / 100n },
@@ -80,7 +72,7 @@ function decodeSwapWords(data) {
     totalOut: src.q.routes[0].amountOut,
   };
   const fTok = src.f.isNative ? app.tokenById("infinite", "usdt") : src.f;
-  const chainForSplit = src.c.key === "testnet" ? { ...CHAINS.infinite, aggregator: fakeChain.aggregator } : fakeChain;
+  const chainForSplit = fakeChain;
   // token->token で検証 (Infinite USDT -> FISH を題材に、ルートは実在のものを使う)
   const tt = await quote("infinite", "usdt", "fish", "500");
   const planTT = {

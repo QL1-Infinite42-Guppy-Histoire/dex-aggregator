@@ -55,7 +55,7 @@ async function stubFetch(url, opts) {
   return { ok: true, status: 200, json: async () => payload };
 }
 
-const IDS = ["chainInf", "chainQl1", "chainTest", "testnetBanner", "chainNote", "connectBtn", "connectBtnMain", "connDlg", "connTitle", "connAddr", "disconnectBtn", "connClose", "fromTokenBadge", "toTokenBadge", "xFromTokenBadge", "xToTokenBadge", "accountLine", "status", "fromToken", "toToken", "fromBalance", "toBalance", "amountIn", "flipBtn", "quoteBtn", "planArea", "routeList", "splitNote", "rateLine", "rateInvertBtn", "gasLine", "receiveOut", "minLine", "swapBtn", "txResult", "slipCustom", "caInput", "caAddBtn", "caMsg", "modeSame", "modeCross", "modeNote", "swapPanel", "caPanel", "crossPanel", "xSrcInf", "xSrcQl1", "xDstLabel", "xDstMark", "xFromToken", "xToToken", "xFromBalance", "xAmount", "xQuoteBtn", "xStatus", "xCandidates", "xFlow", "xAbandon", "arbPanel", "arbAmount", "arbScanBtn", "arbStatus", "arbBoard", "arbTestnetNote", "langSel", "aggArea", "themeToggle"];
+const IDS = ["chainInf", "chainQl1", "chainNote", "connectBtn", "connectBtnMain", "connDlg", "connTitle", "connAddr", "disconnectBtn", "connClose", "fromTokenBadge", "toTokenBadge", "xFromTokenBadge", "xToTokenBadge", "accountLine", "status", "fromToken", "toToken", "fromBalance", "toBalance", "amountIn", "flipBtn", "quoteBtn", "planArea", "routeList", "splitNote", "rateLine", "rateInvertBtn", "gasLine", "receiveOut", "minLine", "swapBtn", "txResult", "slipCustom", "caInput", "caAddBtn", "caMsg", "modeSame", "modeCross", "modeNote", "swapPanel", "caPanel", "crossPanel", "xSrcInf", "xSrcQl1", "xDstLabel", "xDstMark", "xFromToken", "xToToken", "xFromBalance", "xAmount", "xQuoteBtn", "xStatus", "xCandidates", "xFlow", "xAbandon", "arbPanel", "arbAmount", "arbScanBtn", "arbStatus", "arbBoard", "langSel", "aggArea", "themeToggle"];
 function loadPage(lang, eth, presetStore) {
   function makeEl(id) {
     return {
@@ -277,7 +277,7 @@ const countCalls = (eth, method) => eth.calls.filter((c) => c && c.method === me
   {
     for (const [name, file] of [["EN", "../docs/en.html"], ["JA", "../docs/ja.html"]]) {
       const html = fs.readFileSync(__dirname + "/" + file, "utf8");
-      assert.strictEqual((html.match(/img\/chain-42\.jpg/g) || []).length, 4, name + ": 42 mark in chain switcher x2 + cross source + destination");
+      assert.strictEqual((html.match(/img\/chain-42\.jpg/g) || []).length, 3, name + ": 42 mark in chain switcher + cross source + destination");
       assert.strictEqual((html.match(/img\/chain-ql1\.jpg/g) || []).length, 2, name + ": QL1 mark in chain switcher + cross source");
       assert.ok(html.includes('id="xDstMark"'), name + ": destination mark element present");
     }

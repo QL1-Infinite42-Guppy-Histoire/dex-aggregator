@@ -3,38 +3,35 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DEXアグリゲーター（42 Chain / QL1 / 42 Testnet）</title>
-<meta name="description" content="42 Chain（Infinite）と QL1 と 42テストネットで、直接・経由・分割の全部のルートを比べて、いちばん多く受け取れるプランで交換できるサイト。">
+<title>DEXアグリゲーター（42 Chain / QL1）</title>
+<meta name="description" content="42 Chain（Infinite）と QL1 で、直接・経由・分割の全部のルートを比べて、いちばん多く受け取れるプランで交換できるサイト。">
 <script>(function(){try{var t=localStorage.getItem('guppy-theme');document.documentElement.dataset.theme=(t==='dark'?'dark':'light');}catch(e){document.documentElement.dataset.theme='light';}})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Zen+Kaku+Gothic+New:wght@500;700;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=9">
+<link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
 <header>
   <div class="top-actions"><div class="lang-switch"><label>言語 / Language <select id="langSel"><option value="en">English</option><option value="ja" selected>日本語</option></select></label></div><button id="connectBtn" type="button" class="header-connect">ウォレットを接続（MetaMask）</button><button id="themeToggle" type="button" class="theme-toggle" aria-label="背景テーマ切替">🌙 黒背景</button></div>
-  <h1>DEXアグリゲーター（42 Chain / QL1 / 42 Testnet）</h1>
+  <h1>DEXアグリゲーター（42 Chain / QL1）</h1>
   <p class="sub">いちばん多く受け取れるルートを、全部のプールから探します。</p>
   <p class="sub small">「ルート」＝交換の通り道です。たとえば USDT → 42 を直接交換する道と、USDT → FISH → 42 のように経由する道があり、金額によって多い方が変わります。さらに、金額を複数のルートに分ける「分割」も含めて全部見積もりして並べます（1inchと同じ考え方）。</p>
 </header>
 <main class="layout">
-
-<div id="testnetBanner" class="testnet-banner" style="display:none">⚠ テストネット（TEST42）— 本物のお金ではありません</div>
 
 <section class="panel">
   <h2>チェーン</h2>
   <div class="chain-row">
     <button id="chainInf" type="button" class="chain-btn active"><img class="chain-mark sq" src="img/chain-42.jpg" alt="">42 Chain</button>
     <button id="chainQl1" type="button" class="chain-btn"><img class="chain-mark" src="img/chain-ql1.jpg" alt="">QL1</button>
-    <button id="chainTest" type="button" class="chain-btn"><img class="chain-mark sq" src="img/chain-42.jpg" alt="">42 Testnet</button>
   </div>
   <p id="chainNote" class="count"></p>
   <div class="chain-row" style="margin-top:8px">
     <button id="modeSame" type="button" class="chain-btn active">同一チェーン内</button>
     <button id="modeCross" type="button" class="chain-btn">クロスチェーン</button>
   </div>
-  <p id="modeNote" class="count">クロスチェーンは QL1 ⇔ 42 Chain の間です（テストネットでは使えません）。</p>
+  <p id="modeNote" class="count">クロスチェーンは QL1 ⇔ 42 Chain の間です。</p>
   <div class="connect-row account-row">
     <span id="accountLine" class="count">未接続（見積もりだけなら接続なしで使えます）</span>
   </div>
@@ -57,7 +54,7 @@
       <button type="button" class="chip" data-pct="75">75%</button>
       <button type="button" class="chip" data-pct="MAX">MAX</button>
     </div>
-    <p class="count">MAX はネイティブ通貨（42 / QOM / TEST42）の場合、ガス代用に 0.01 だけ残して計算します。トークンの場合は全額です。</p>
+    <p class="count">MAX はネイティブ通貨（42 / QOM）の場合、ガス代用に 0.01 だけ残して計算します。トークンの場合は全額です。</p>
   </div>
 
   <div class="flip-row"><button id="flipBtn" type="button" aria-label="上下入れ替え">↓↑ 入れ替える</button></div>
@@ -128,7 +125,6 @@
 <section class="panel" id="arbPanel">
   <h2>価格差（裁定）</h2>
   <p class="count">QL1 と 42 Chain の間で同じトークンの値段がズレていると、「安い方で買って、ブリッジして、高い方で売る」ことで差が取れます（裁定。取引されると価格差は縮んでいきます）。このボードは、基準通貨 QOM で始めて QOM で終わるルートを、全トークン×両方向で<b>実際のルート見積もり</b>（各プールの <code>getAmountsOut</code>）で計算します。目安価格だけの比較は、薄いプールではうそになるため使いません。</p>
-  <p id="arbTestnetNote" class="count" style="display:none">テストネットでは使えません（QL1のテストネットブリッジは確認できていません）。本番チェーンを選んでください。</p>
   <label class="fld">金額（QOM）
     <input id="arbAmount" type="text" inputmode="decimal" autocomplete="off" value="100000000000" aria-label="金額（QOM）">
   </label>
@@ -165,8 +161,7 @@
   <ul class="notes">
     <li>見積もりは DEX ルーターの <code>getAmountsOut</code> を、直接・1つ経由・2つ経由の全ルートで実際にたたいた結果です。推測の価格ではありません。</li>
     <li>上位ルートへの分割（90/10、80/20、…、50/50 や3ルート分割）も同じ方法で見積もりし、単一ルートより多いときは「分割プラン（おすすめ）」として出します。</li>
-    <li><b>分割の実行には専用のアグリゲーター・コントラクトが必要です。</b>コントラクト（SplitSwap）はこのサイトのリポジトリで公開していて、チェーンごとに自分のウォレットからこの画面でデプロイできます（v7）。デプロイした住所はこのブラウザに保存され、それ以降は分割プランをそのまま実行できます。デプロイしていないチェーンでは分割は<b>見積もりのみ</b>で、実行は単一ルートです。テストネットでも同じ方法でデプロイできますが、ガス代に TEST42 が必要です（公開ファウセットは見つかっていません）。各レッグには最低受取量も入ります（v7）。クロスチェーンの分割は、追加のブリッジ代を引いても単一ベストに勝つときだけプランを出します（v6.5）。</li>
-    <li>テストネットの DEX ルーターは、公開記録のアドレスが1文字多く壊れていたため、候補を全部ライブで検証して復旧したアドレスを使っています。トークン一覧もテストネットの実ペアから作っています。</li>
+    <li><b>分割の実行には専用のアグリゲーター・コントラクトが必要です。</b>コントラクト（SplitSwap）はこのサイトのリポジトリで公開していて、チェーンごとに自分のウォレットからこの画面でデプロイできます（v7）。デプロイした住所はこのブラウザに保存され、それ以降は分割プランをそのまま実行できます。デプロイしていないチェーンでは分割は<b>見積もりのみ</b>で、実行は単一ルートです。各レッグには最低受取量も入ります（v7）。クロスチェーンの分割は、追加のブリッジ代を引いても単一ベストに勝つときだけプランを出します（v6.5）。</li>
     <li>「値段の下がり幅」は、プールの残高から計算した手数料なしの目安と、実際の見積もりとの差です（手数料＋金額の大きさによる影響）。ガスの金額も目安です。</li>
     <li>プールが小さいトークンでは、見積もりと実際の結果がズレやすくなります。少しの金額で試してから大きな金額を扱ってください。</li>
     <li>このサイトは手数料を取りません。交換は各チェーンの DEX（42 Chain: Don't Panic／QL1: QomSwap）のルーターと直接やり取りします。</li>
@@ -180,7 +175,7 @@
 
 </main>
 <footer>
-  <p>v7.2 ／ データ取得元：42 Chain RPC / QL1 RPC / 42 Testnet RPC（プールを直接読取）。ソースコードは MIT ライセンスで公開しています。コミュニティによる開発で、各チェーン／DEX の公式プロダクトではありません。</p>
+  <p>v7.2 ／ データ取得元：42 Chain RPC / QL1 RPC（プールを直接読取）。ソースコードは MIT ライセンスで公開しています。コミュニティによる開発で、各チェーン／DEX の公式プロダクトではありません。</p>
 </footer>
 
 <dialog id="connDlg">
@@ -201,6 +196,6 @@
   btn.addEventListener('click',function(){ var next=document.documentElement.dataset.theme==='dark'?'light':'dark'; document.documentElement.dataset.theme=next; try{localStorage.setItem('guppy-theme',next);}catch(e){} label(); });
 })();
 </script>
-<script src="app.js?v=21"></script>
+<script src="app.js?v=22"></script>
 </body>
 </html>

@@ -38,7 +38,7 @@ const artifact = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "contract
       "| to == 保存済みアグリゲーター:", tx.to === "0x3333333333333333333333333333333333333333");
   }
   console.log("3) デプロイ tx:");
-  for (const key of ["infinite", "ql1", "testnet"]) {
+  for (const key of ["infinite", "ql1"]) {
     const c = app.CHAINS[key];
     const dtx = app.buildDeployTx(c);
     console.log("  ", key, ": to:", dtx.to, "| 末尾32B == ルーター:", ("0x" + dtx.data.slice(-40)) === c.router.toLowerCase(), "| data bytes:", (dtx.data.length - 2) / 2);

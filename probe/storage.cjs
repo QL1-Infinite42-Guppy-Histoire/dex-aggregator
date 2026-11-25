@@ -49,7 +49,7 @@ async function stubFetch(url, opts) {
   return { ok: true, status: 200, json: async () => payload };
 }
 
-const IDS = ["chainInf", "chainQl1", "chainTest", "testnetBanner", "chainNote", "connectBtn", "connectBtnMain", "connDlg", "connTitle", "connAddr", "disconnectBtn", "connClose", "fromTokenBadge", "toTokenBadge", "xFromTokenBadge", "xToTokenBadge", "accountLine", "status", "fromToken", "toToken", "fromBalance", "toBalance", "amountIn", "flipBtn", "quoteBtn", "planArea", "routeList", "splitNote", "rateLine", "rateInvertBtn", "gasLine", "receiveOut", "minLine", "swapBtn", "txResult", "slipCustom", "caInput", "caAddBtn", "caMsg", "modeSame", "modeCross", "modeNote", "swapPanel", "caPanel", "crossPanel", "xSrcInf", "xSrcQl1", "xDstLabel", "xDstMark", "xFromToken", "xToToken", "xFromBalance", "xAmount", "xQuoteBtn", "xStatus", "xCandidates", "xFlow", "xAbandon", "arbPanel", "arbAmount", "arbScanBtn", "arbStatus", "arbBoard", "arbTestnetNote", "langSel", "aggArea", "themeToggle"];
+const IDS = ["chainInf", "chainQl1", "chainNote", "connectBtn", "connectBtnMain", "connDlg", "connTitle", "connAddr", "disconnectBtn", "connClose", "fromTokenBadge", "toTokenBadge", "xFromTokenBadge", "xToTokenBadge", "accountLine", "status", "fromToken", "toToken", "fromBalance", "toBalance", "amountIn", "flipBtn", "quoteBtn", "planArea", "routeList", "splitNote", "rateLine", "rateInvertBtn", "gasLine", "receiveOut", "minLine", "swapBtn", "txResult", "slipCustom", "caInput", "caAddBtn", "caMsg", "modeSame", "modeCross", "modeNote", "swapPanel", "caPanel", "crossPanel", "xSrcInf", "xSrcQl1", "xDstLabel", "xDstMark", "xFromToken", "xToToken", "xFromBalance", "xAmount", "xQuoteBtn", "xStatus", "xCandidates", "xFlow", "xAbandon", "arbPanel", "arbAmount", "arbScanBtn", "arbStatus", "arbBoard", "langSel", "aggArea", "themeToggle"];
 function loadPage(lang, eth, presetStore) {
   function makeEl(id) {
     return {
@@ -141,6 +141,26 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
     const { app } = loadPage("en", eth, { dexagg_xflow_v1: "{not json" });
     assert.strictEqual(app.state.xflow, null, "corrupt JSON discarded");
     console.log("FLOW PASS: corrupt JSON discarded");
+  }
+  /* ---- 削除済みチェーンの保存分が残っていても壊れない (2026-11-25 削除対応) ----
+     旧チェーン (キー "testnet") 向けに保存されたカスタムトークンと
+     アグリゲーター住所が localStorage に残ったまま再訪しても、初期化が
+     完走し、選択チェーンは 42 Chain (infinite) に落ち、旧チェーンの
+     トークンがどのチェーンの一覧にも混ざらないことを固定する。 */
+  {
+    const LEGACY_TOK = { id: "ca_0x4444444444444444444444444444444444444444", symbol: "LEG", name: "Legacy", address: "0x4444444444444444444444444444444444444444", decimals: 18, isNative: false, custom: true };
+    const preset = {
+      dexagg_custom_v1: JSON.stringify({ infinite: [VALID_TOK], ql1: [], testnet: [LEGACY_TOK] }),
+      dexagg_aggregator_v1: JSON.stringify({ testnet: "0x5555555555555555555555555555555555555555" }),
+    };
+    const { app, els } = loadPage("en", eth, preset);
+    assert.ok((els.quoteBtn._handlers.click || []).length > 0, "legacy state: init completed (quote handler wired)");
+    assert.strictEqual(app.state.chainKey, "infinite", "legacy state: chain falls back to 42 Chain");
+    assert.deepStrictEqual(app.state.custom.infinite.map((t) => t.id), [VALID_TOK.id], "legacy state: mainnet customs still load");
+    assert.ok(!("testnet" in app.state.custom), "legacy state: removed chain has no custom-token slot");
+    assert.ok(!app.allTokens("infinite").some((t) => t.id === LEGACY_TOK.id) && !app.allTokens("ql1").some((t) => t.id === LEGACY_TOK.id), "legacy state: removed-chain token appears in no chain list");
+    assert.strictEqual(app.storedAggregator("infinite"), null, "legacy state: removed-chain aggregator does not leak into 42 Chain");
+    console.log("LEGACY PASS: removed-chain leftovers in localStorage are ignored; init completes on 42 Chain");
   }
   console.log("STORAGE PROBE: ALL PASS");
 })().catch((e) => { console.error("STORAGE PROBE FAIL:", e && e.message); process.exit(1); });

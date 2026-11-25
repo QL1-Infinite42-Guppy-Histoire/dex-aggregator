@@ -1,4 +1,4 @@
-# DEXアグリゲーター（42 Chain / QL1 / 42 Testnet）— v6.5 + v7 + v7.1 + v7.2
+# DEXアグリゲーター（42 Chain / QL1）— v6.5 + v7 + v7.1 + v7.2
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -10,7 +10,7 @@
 
 コミュニティによる開発です（各チェーン／DEX の公式プロダクトではありません）。
 
-42 Chain（Infinite、EVM 421018）、QL1（EVM 766）、42 テストネット（EVM 421018001）で、
+42 Chain（Infinite、EVM 421018）、QL1（EVM 766）で、
 トークンの交換（スワップ）のときに**いちばん多く受け取れるプランを全部のプールから探す**サイトです（1inch と同じ考え方）。
 
 例：USDT → 42 は直接交換できるだけでなく、USDT → FISH → 42 のように経由する道もあります。
@@ -19,7 +19,7 @@
 
 ## 使い方
 
-1. チェーン（42 Chain / QL1 / 42 Testnet）を選ぶ
+1. チェーン（42 Chain / QL1）を選ぶ
 2. 出すトークン・金額・受け取るトークンを選ぶ（金額は 25% / 50% / 75% / MAX チップでも指定可）
 3. 「ルートを比べる」を押す → 単一ルートと分割プランが、受け取れる量の多い順に並ぶ
 4. 好きなプランを選び、MetaMask を接続して交換する
@@ -202,10 +202,9 @@ v6 から、クロスチェーンでも **全体ルート同士の分割** を�
   作成バイトコード 5,601 バイト。権限なし・資産の預かりなしは従来どおり。
 - 実行は従来の分割プランそのままです: ERC20 入力ならアグリゲーターへの
   approve → splitSwap 系 tx を1回。ネイティブ入力は value = レッグ合計。
-  テストネットも同じデプロイ方法ですが、ガス代に TEST42 が必要です。
 - **正直な限界**: この開発環境からは実際の送信はしていません（鍵・資金が
   無いため）。calldata の構築・復号の往復、デプロイ tx の見積もり
-  （3チェーン全て成功）、状態遷移は全てローカル検証済みです。実利用の
+  （両チェーンとも成功）、状態遷移は全てローカル検証済みです。実利用の
   最初の一歩は「チェーンごとに1回デプロイ → 少額で初回の分割交換」です。
 
 ### ブリッジの実在確認（有効範囲の根拠）
@@ -229,7 +228,7 @@ v6 から、クロスチェーンでも **全体ルート同士の分割** を�
 - QL1 側の送信は、Zaphod と同じく warp ルーターへ直接 `transferRemote` を呼びます
   （ラッパー無し）。ルーターが取引トークンをロックボックス経由で xERC20 化する処理は
   その1件のトランザクションの中で行われます（実送信のログで確認済み）。
-- テストネットには QL1 とのブリッジが確認できていないため、クロスチェーンは本番同士だけです。
+- クロスチェーンは 42 Chain ⇔ QL1 の間だけです。
 
 ## 価格差（裁定）（v4）
 
@@ -311,7 +310,7 @@ QL1 と 42 Chain の間の価格差を、2つの形で表面化します。
 
 分割を1回の取引で実行するには専用のアグリゲーター・コントラクトが必要です。
 このリポジトリにはそのコントラクト **SplitSwap**（`contracts/SplitSwap.sol`、コンパイル済み
-`contracts/SplitSwap.json`、デプロイ手順 `contracts/deploy.cjs`）を用意していますが、
+`contracts/SplitSwap.json`）を用意していますが、
 **サイトに内蔵された既定のデプロイは、どのチェーンにもありません**。
 
 - v7 以降は、利用者がサイトの画面から自分のウォレットでチェーンごとに
@@ -319,24 +318,6 @@ QL1 と 42 Chain の間の価格差を、2つの形で表面化します。
   ブラウザでは本番チェーン（42 Chain / QL1）でも分割をそのまま実行できます。
 - デプロイしていないチェーン／ブラウザでは、分割は見積もりのみで、
   実行は単一ルートです（サイトにもその旨が表示されます）。
-- 42 テストネット: 開発側ではデプロイ用アドレスの TEST42 残高が 0 で、
-  TEST42 の公開ファウセットが見つからなかったため、開発側の検証用デプロイは
-  未実施です。利用者側は TEST42 があれば同じ画面内デプロイが使えます。
-  `TESTNET_PRIVATE_KEY=… node contracts/deploy.cjs` でのデプロイや、
-  `docs/app.js` の `CHAINS.testnet.aggregator` にアドレスを入れて内蔵の
-  既定住所として有効化することもできます。
-
-## テストネットについて
-
-- RPC: https://evm-rpc-testnet.infinitedrive.xyz ／ チェーンID 421018001 ／ 通貨 TEST42
-- DEX ルーターは、Builders 投稿の記録が **41桁（1文字多い）で壊れていた**ため、
-  1文字削除の全候補（ユニーク38件）をライブRPCで検証し、コードがあり・`factory()` が
-  テストネット factory `0x8944AaDc2B88E1eE59Fc079d6E70b23c758494dA` を返し・`WETH()` が
-  答えた唯一の候補 `0xfe644aa3e5C9B3901822627a237f5e4c2d012690` を採用しました
-  （記録の `…237F5e4eC…` の余分な `e` が原因）。
-- トークン一覧（TEST42 / FOXXEY / ARBA / ARBB / pop / TST）は、テストネット factory の
-  全6ペアを列挙して作った実物です（`tools/enumerate_testnet.cjs`）。
-  メインネットのアドレスを流用していません。
 
 ## その他
 
@@ -347,8 +328,8 @@ QL1 と 42 Chain の間の価格差を、2つの形で表面化します。
 
 ## English summary
 
-A DEX aggregator for 42 Chain (Infinite, EVM 421018), QL1 (EVM 766) and the 42 Testnet
-(EVM 421018001), in the style of 1inch. For any swap it quotes **every** candidate route —
+A DEX aggregator for 42 Chain (Infinite, EVM 421018) and QL1 (EVM 766),
+in the style of 1inch. For any swap it quotes **every** candidate route —
 direct, 1-hop and 2-hop paths through the chain's base tokens — plus **split allocations**
 across the top routes (90/10 … 50/50 and 3-way splits), using the DEX router's real
 `getAmountsOut` for each partial amount. Plans are ranked by actual output, with price
@@ -578,8 +559,7 @@ changed minimally: each leg now carries its own minimum output
 recompiled with solc 0.8.26, optimizer 200 runs, **EVM target paris** —
 QL1's EVM rejects Shanghai PUSH0 (measured: the deploy estimate failed
 with "invalid opcode: PUSH0"), so paris is required; with it, the
-deploy estimates cleanly on all three chains (≈1,210,366 gas). The
-testnet uses the same in-page deploy but needs TEST42 for gas.
+deploy estimates cleanly on both chains (≈1,210,366 gas).
 
 Honest limits: split execution needs the SplitSwap aggregator on the
 chain you use — until you deploy it from the page (once per chain, your
@@ -587,10 +567,7 @@ own gas), same-chain splits stay quote-only there. No transaction was
 broadcast from the development environment (it holds no keys/funds);
 calldata construction/decoding round-trips, the deployment transaction
 and its gas estimate, and all state transitions are verified locally.
-The testnet router address in public records was corrupted (41 hex
-digits); the address used here was recovered by verifying every
-single-character deletion live on-chain. The testnet token list is
-built from the testnet factory's real pairs. Site root
+Site root
 (English by default; Japanese at /ja.html):
 https://ql1-infinite42-guppy-histoire.github.io/dex-aggregator/
 
@@ -604,9 +581,8 @@ node probe/crosschain.cjs          # クロスチェーン見積もり（2方向
 node probe/arb.cjs                 # 価格差: 具体例 (42->QOM)・直接ブリッジ比較・ボード全行スナップショット
 node probe/fullroutes.cjs          # v5全体ルート: 1000 USDT->QL1 QOM の4例照合・全中継カバー・非ベストルートのcalldata照合
 node probe/splitcross.cjs          # v6〜v6.4クロス分割: 100 USDT の勝ちケース・10B QOM の対照 (v6.4でバリアント分割が小幅勝利に転じた所見)・1,000 USDT のケースC (1,300B 目標)・qCAW のケースD (R2パート入り)・パートcalldata照合
-node probe/splitswap.cjs           # v7: 内蔵バイトコードと contracts/ の一致・3バリアントのセレクタ/復号照合・デプロイtxの見積もり (3チェーン)
-node tools/harness.cjs             # 出荷コードを DOM スタブ上で動かす検証（JP/EN/テストネット/クロスチェーン）
-node tools/enumerate_testnet.cjs   # テストネット factory の全ペア列挙
+node probe/splitswap.cjs           # v7: 内蔵バイトコードと contracts/ の一致・3バリアントのセレクタ/復号照合・デプロイtxの見積もり (両チェーン)
+node tools/harness.cjs             # 出荷コードを DOM スタブ上で動かす検証（JP/EN/クロスチェーン）
 node tools/bridge/sample_counts.cjs    # ブリッジ各ルーターの実txメソッド集計
 node tools/bridge/sample_delivery.cjs  # 実送信の messageId → 届け先 mailbox の delivered() 照合
 ```
@@ -774,8 +750,9 @@ node tools/bridge/sample_delivery.cjs  # 実送信の messageId → 届け先 ma
   交換→ブリッジ→交換の束ね見積もりとランキング、4ステップのガイド式実行（状態は
   localStorage に保存・再開可、到着は残高監視で自動検出）。有効範囲は実送信の
   delivered() 照合で決定（QL1→42 は全8トークン、42→QL1 は OSAK を除く7トークン）。
+- **2026-11-25**: 対応チェーンを 42 Chain / QL1 の2チェーンに整理した。
 - **v2（2026-11-06）**: 1inch風パネル（You pay / You receive・レート反転・ガス目安）、
-  分割プランの評価と％バー表示、42 テストネット対応（ルーター復旧・実ペアのトークン一覧）、
+  分割プランの評価と％バー表示、
   英語版（en.html）、SplitSwap コントラクトを収録（未デプロイ）。
 - v1（2026-11-06）: 42 Chain / QL1 のルート比較と単一ルート実行。
 
